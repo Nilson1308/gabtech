@@ -4,7 +4,7 @@ import { useAtendimentosStore } from '@/stores/atendimentos'
 import { useCrmStore } from '@/stores/crm'
 import { useAuthStore } from '@/stores/auth'
 import { PERMS } from '@/constants/rbac'
-import type { Atendimento, Tag } from '@/types'
+import type { Atendimento, Cidadao, Tag } from '@/types'
 import Modal from '@/components/common/Modal.vue'
 import Button from '@/components/common/Button.vue'
 import TagAtendimentoCreatorInline from '@/components/atendimentos/TagAtendimentoCreatorInline.vue'
@@ -53,27 +53,54 @@ const cidadaoEditando = ref<any>(null)
 
 // Seleção de perfil para cidadão com múltiplos perfis
 const mostrarSeletorPerfil = ref(false)
-const cidadaoParaSelecionarPerfil = ref<string>('')
+const cidadaoPendentePerfil = ref<Cidadao | null>(null)
 const perfilSelecionado = ref<string>('')
 
-// Cidadãos filtrados para busca
-const cidadaosFiltrados = computed(() => {
-  if (!buscaCidadao.value) return crmStore.cidadaos.slice(0, 10)
-  
-  const query = buscaCidadao.value.toLowerCase()
-  return crmStore.cidadaos
-    .filter(c => 
-      c.nome.toLowerCase().includes(query) ||
-      c.telefone.includes(query) ||
-      c.cpf?.includes(query)
-    )
-    .slice(0, 10)
+const resultadosBuscaCidadao = ref<Cidadao[]>([])
+const buscandoCidadao = ref(false)
+const cidadaoSelecionadoCache = ref<Cidadao | null>(null)
+let debounceBuscaCidadao: ReturnType<typeof setTimeout> | undefined
+
+watch(buscaCidadao, (query) => {
+  clearTimeout(debounceBuscaCidadao)
+  const trimmed = query.trim()
+  if (!trimmed) {
+    resultadosBuscaCidadao.value = []
+    return
+  }
+  debounceBuscaCidadao = setTimeout(async () => {
+    buscandoCidadao.value = true
+    try {
+      resultadosBuscaCidadao.value = await crmStore.searchCidadaos(trimmed, 15)
+    } finally {
+      buscandoCidadao.value = false
+    }
+  }, 300)
 })
 
-// Cidadão selecionado
-const cidadaoSelecionado = computed(() => {
-  return crmStore.cidadaos.find(c => c.id === form.value.cidadaoId)
-})
+watch(
+  () => form.value.cidadaoId,
+  async (id) => {
+    if (!id) {
+      cidadaoSelecionadoCache.value = null
+      return
+    }
+    if (cidadaoSelecionadoCache.value?.id === id) {
+      return
+    }
+    const local =
+      resultadosBuscaCidadao.value.find(c => c.id === id)
+      ?? crmStore.cidadaos.find(c => c.id === id)
+    if (local) {
+      cidadaoSelecionadoCache.value = local
+      return
+    }
+    cidadaoSelecionadoCache.value = await crmStore.getCidadaoById(id)
+  },
+  { immediate: true },
+)
+
+const cidadaoSelecionado = computed(() => cidadaoSelecionadoCache.value)
 
 const podeEscolherResponsavel = computed(() => authStore.hasPermission(PERMS.atendReassign))
 
@@ -101,48 +128,44 @@ const resetForm = () => {
   erro.value = null
 }
 
-// Selecionar cidadão
-const selecionarCidadao = (id: string) => {
-  const cidadao = crmStore.cidadaos.find(c => c.id === id)
-  if (!cidadao) return
-  
-  // Verificar se tem múltiplos perfis
+const selecionarCidadao = (cidadao: Cidadao) => {
+  cidadaoSelecionadoCache.value = cidadao
   if (cidadao.perfis_profissionais && cidadao.perfis_profissionais.length > 1) {
-    // Mostrar seletor de perfil
-    cidadaoParaSelecionarPerfil.value = id
+    cidadaoPendentePerfil.value = cidadao
     perfilSelecionado.value = ''
     mostrarSeletorPerfil.value = true
   } else {
-    // Selecionar diretamente
-    form.value.cidadaoId = id
-    form.value.perfil_ativo_id = cidadao.perfis_profissionais && cidadao.perfis_profissionais.length > 0
-      ? cidadao.perfis_profissionais[0].id
-      : ''
+    form.value.cidadaoId = cidadao.id
+    form.value.perfil_ativo_id =
+      cidadao.perfis_profissionais && cidadao.perfis_profissionais.length > 0
+        ? cidadao.perfis_profissionais[0].id
+        : ''
     buscaCidadao.value = ''
+    resultadosBuscaCidadao.value = []
   }
 }
 
 // Confirmar seleção de perfil
 const confirmarSelecaoPerfil = () => {
-  if (!cidadaoParaSelecionarPerfil.value || !perfilSelecionado.value) {
+  if (!cidadaoPendentePerfil.value || !perfilSelecionado.value) {
     erro.value = 'Selecione um perfil para continuar'
     return
   }
-  
-  form.value.cidadaoId = cidadaoParaSelecionarPerfil.value
+
+  form.value.cidadaoId = cidadaoPendentePerfil.value.id
   form.value.perfil_ativo_id = perfilSelecionado.value
-  
-  // Reset
+  cidadaoSelecionadoCache.value = cidadaoPendentePerfil.value
+
   mostrarSeletorPerfil.value = false
-  cidadaoParaSelecionarPerfil.value = ''
+  cidadaoPendentePerfil.value = null
   perfilSelecionado.value = ''
   buscaCidadao.value = ''
+  resultadosBuscaCidadao.value = []
 }
 
-// Cancelar seleção de perfil
 const cancelarSelecaoPerfil = () => {
   mostrarSeletorPerfil.value = false
-  cidadaoParaSelecionarPerfil.value = ''
+  cidadaoPendentePerfil.value = null
   perfilSelecionado.value = ''
 }
 
@@ -150,6 +173,7 @@ const cancelarSelecaoPerfil = () => {
 const removerCidadao = () => {
   form.value.cidadaoId = ''
   form.value.perfil_ativo_id = ''
+  cidadaoSelecionadoCache.value = null
 }
 
 // Abrir modal para criar novo cidadão
@@ -170,7 +194,7 @@ const handleCidadaoCriado = () => {
     // Criação: seleciona o último cidadão (recém-criado) verificando perfis
     const ultimoCidadao = crmStore.cidadaos[0] // Novo cidadão está no início (unshift)
     if (ultimoCidadao) {
-      selecionarCidadao(ultimoCidadao.id)
+      selecionarCidadao(ultimoCidadao)
     }
   }
   // Se for edição, mantém o cidadão já selecionado
@@ -294,12 +318,10 @@ const preencherFormularioEdicao = (a: Atendimento) => {
     tags: a.tags ?? [],
     anexos: [],
   }
-  if (!crmStore.cidadaos.some(c => c.id === a.cidadaoId)) {
-    crmStore.cidadaos.push({
-      ...a.cidadao,
-      createdAt: a.cidadao.createdAt || a.createdAt,
-      updatedAt: a.cidadao.updatedAt || a.updatedAt,
-    })
+  cidadaoSelecionadoCache.value = {
+    ...a.cidadao,
+    createdAt: a.cidadao.createdAt || a.createdAt,
+    updatedAt: a.cidadao.updatedAt || a.updatedAt,
   }
 }
 
@@ -364,9 +386,6 @@ watch(
       atendimentosStore.fetchTagsAtendimento(),
       atendimentosStore.fetchResponsaveisElegiveis().catch(() => []),
     ])
-    if (crmStore.cidadaos.length === 0) {
-      await crmStore.fetchCidadaos(1, 50)
-    }
     if (props.atendimento) {
       preencherFormularioEdicao(props.atendimento)
     } else {
@@ -446,11 +465,14 @@ watch(
           </div>
 
           <!-- Lista de Resultados -->
-          <div v-if="buscaCidadao && cidadaosFiltrados.length > 0" class="mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700 max-h-48 overflow-y-auto">
+          <div
+            v-if="buscaCidadao && resultadosBuscaCidadao.length > 0"
+            class="mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg divide-y divide-gray-200 dark:divide-gray-700 max-h-48 overflow-y-auto"
+          >
             <button
-              v-for="cidadao in cidadaosFiltrados"
+              v-for="cidadao in resultadosBuscaCidadao"
               :key="cidadao.id"
-              @click="selecionarCidadao(cidadao.id)"
+              @click="selecionarCidadao(cidadao)"
               type="button"
               class="w-full text-left p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
@@ -460,7 +482,10 @@ watch(
           </div>
 
           <!-- Sem Resultados -->
-          <div v-else-if="buscaCidadao" class="mt-2 p-3 text-sm text-gray-500 dark:text-gray-400 text-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+          <div
+            v-else-if="buscaCidadao && !buscandoCidadao"
+            class="mt-2 p-3 text-sm text-gray-500 dark:text-gray-400 text-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg"
+          >
             Nenhum cidadão encontrado
           </div>
         </div>
@@ -674,12 +699,12 @@ watch(
           Selecione o Perfil Atuante
         </h3>
         <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-          {{ cidadaoParaSelecionarPerfil ? crmStore.cidadaos.find(c => c.id === cidadaoParaSelecionarPerfil)?.nome : '' }} possui múltiplos perfis. Selecione qual perfil está sendo usado neste atendimento:
+          {{ cidadaoPendentePerfil?.nome }} possui múltiplos perfis. Selecione qual perfil está sendo usado neste atendimento:
         </p>
 
         <div class="space-y-2 mb-6">
           <label
-            v-for="perfil in cidadaoParaSelecionarPerfil ? crmStore.cidadaos.find(c => c.id === cidadaoParaSelecionarPerfil)?.perfis_profissionais : []"
+            v-for="perfil in cidadaoPendentePerfil?.perfis_profissionais ?? []"
             :key="perfil.id"
             class="flex items-start gap-3 p-3 border-2 rounded-lg cursor-pointer transition-colors"
             :class="[

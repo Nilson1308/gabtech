@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useCrmStore } from '@/stores/crm'
 import { useAtendimentosStore } from '@/stores/atendimentos'
-import type { Cidadao } from '@/types'
+import type { Atendimento, Cidadao } from '@/types'
 import Avatar from '@/components/common/Avatar.vue'
 import Button from '@/components/common/Button.vue'
 import CidadaoModal from '@/components/crm/CidadaoModal.vue'
@@ -25,40 +25,104 @@ const { formatDate } = useFormatters()
 
 const podeEditarAnexos = computed(() => authStore.hasPermission(PERMS.crmEdit))
 
-// Estado
 const cidadao = ref<Cidadao | null>(null)
-const loading = ref(true)
+const loadingCidadao = ref(true)
 const mostrarModalEdicao = ref(false)
 const confirmandoExclusao = ref(false)
 const abaAtiva = ref<'atendimentos' | 'documentos'>('atendimentos')
 
-// Atendimentos vinculados
-const atendimentosVinculados = computed(() => {
-  if (!cidadao.value) return []
-  return atendimentosStore.atendimentos.filter(a => a.cidadaoId === cidadao.value!.id)
+const atendimentosTimeline = ref<Atendimento[]>([])
+const totalAtendimentos = ref(0)
+const paginaAtendimentos = ref(0)
+const hasMoreAtendimentos = ref(false)
+const loadingAtendimentos = ref(false)
+const loadingMaisAtendimentos = ref(false)
+
+const loading = computed(() => loadingCidadao.value)
+
+const tagPorId = computed(() => {
+  const map = new Map<string, (typeof crmStore.tagsDisponiveis)[number]>()
+  for (const t of crmStore.tagsDisponiveis) {
+    map.set(t.id, t)
+  }
+  return map
 })
 
-// Carregar dados
-onMounted(async () => {
-  const id = route.params.id as string
-  
-  await Promise.all([
+onMounted(() => {
+  void carregarPagina(route.params.id as string)
+})
+
+watch(
+  () => route.params.id,
+  (id) => {
+    if (typeof id === 'string') {
+      void carregarPagina(id)
+    }
+  },
+)
+
+async function carregarPagina(id: string) {
+  loadingCidadao.value = true
+  atendimentosTimeline.value = []
+  paginaAtendimentos.value = 0
+  hasMoreAtendimentos.value = false
+  totalAtendimentos.value = 0
+
+  const [loaded] = await Promise.all([
     carregarCidadao(id),
-    atendimentosStore.fetchAtendimentos()
+    carregarAtendimentos(id, true),
   ])
-  
-  loading.value = false
-})
 
-const carregarCidadao = async (id: string) => {
-  cidadao.value = await crmStore.getCidadaoById(id)
-  
-  if (!cidadao.value) {
+  if (!loaded) {
     router.push('/crm')
   }
 }
 
-// Handlers
+const carregarCidadao = async (id: string): Promise<boolean> => {
+  try {
+    cidadao.value = await crmStore.getCidadaoById(id, { silent: true })
+    return Boolean(cidadao.value)
+  } finally {
+    loadingCidadao.value = false
+  }
+}
+
+async function carregarAtendimentos(cidadaoId: string, reset = false) {
+  if (reset) {
+    loadingAtendimentos.value = true
+    paginaAtendimentos.value = 0
+    atendimentosTimeline.value = []
+  } else {
+    loadingMaisAtendimentos.value = true
+  }
+  try {
+    const page = paginaAtendimentos.value + 1
+    const { items, total, hasMore } = await atendimentosStore.fetchAtendimentosPorCidadao(
+      cidadaoId,
+      page,
+      25,
+    )
+    paginaAtendimentos.value = page
+    totalAtendimentos.value = total
+    hasMoreAtendimentos.value = hasMore
+    if (reset) {
+      atendimentosTimeline.value = items
+    } else {
+      atendimentosTimeline.value.push(...items)
+    }
+  } finally {
+    loadingAtendimentos.value = false
+    loadingMaisAtendimentos.value = false
+  }
+}
+
+const carregarMaisAtendimentos = () => {
+  if (!cidadao.value || !hasMoreAtendimentos.value || loadingMaisAtendimentos.value) {
+    return
+  }
+  void carregarAtendimentos(cidadao.value.id, false)
+}
+
 const voltar = () => {
   router.push('/crm')
 }
@@ -69,13 +133,14 @@ const handleEditar = () => {
 
 const handleSuccess = async () => {
   if (cidadao.value) {
+    loadingCidadao.value = true
     await carregarCidadao(cidadao.value.id)
   }
 }
 
 const handleExcluir = async () => {
   if (!cidadao.value) return
-  
+
   if (!confirmandoExclusao.value) {
     confirmandoExclusao.value = true
     setTimeout(() => {
@@ -83,17 +148,16 @@ const handleExcluir = async () => {
     }, 3000)
     return
   }
-  
+
   await crmStore.deleteCidadao(cidadao.value.id)
   router.push('/crm')
 }
 
-// Endereço completo formatado
 const enderecoCompleto = computed(() => {
   if (!cidadao.value?.endereco) return null
-  
+
   const { logradouro, numero, complemento, bairro, cidade, estado, cep } = cidadao.value.endereco
-  
+
   let endereco = ''
   if (logradouro) endereco += logradouro
   if (numero) endereco += `, ${numero}`
@@ -101,21 +165,18 @@ const enderecoCompleto = computed(() => {
   if (bairro) endereco += `\n${bairro}`
   if (cidade) endereco += ` - ${cidade}/${estado}`
   if (cep) endereco += `\nCEP: ${cep}`
-  
+
   return endereco
 })
 </script>
 
 <template>
   <div class="space-y-6">
-    <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-12">
       <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
     </div>
 
-    <!-- Conteúdo -->
     <template v-else-if="cidadao">
-      <!-- Header -->
       <div class="flex items-center gap-4">
         <Button variant="ghost" @click="voltar" class="p-2">
           <ArrowLeft class="w-5 h-5" />
@@ -138,12 +199,9 @@ const enderecoCompleto = computed(() => {
         </div>
       </div>
 
-      <!-- Layout Split -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <!-- Lado Esquerdo: Card de Perfil -->
         <div class="lg:col-span-1">
           <div class="card sticky top-6">
-            <!-- Avatar -->
             <div class="flex flex-col items-center mb-6">
               <Avatar :nome="cidadao.nome_social || cidadao.nome" tamanho="xl" class="mb-4" />
               <h3 class="text-xl font-bold text-gray-900 dark:text-slate-100 text-center">
@@ -157,24 +215,20 @@ const enderecoCompleto = computed(() => {
               </p>
             </div>
 
-            <!-- Contato -->
             <div class="space-y-3 mb-6">
               <h4 class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
                 Contato
               </h4>
-              
               <div class="flex items-center gap-3 text-sm text-gray-700 dark:text-slate-300">
                 <Phone class="w-4 h-4 text-gray-400 dark:text-slate-500 flex-shrink-0" />
                 <span>{{ cidadao.telefone }}</span>
               </div>
-
               <div v-if="cidadao.email" class="flex items-center gap-3 text-sm text-gray-700 dark:text-slate-300">
                 <Mail class="w-4 h-4 text-gray-400 dark:text-slate-500 flex-shrink-0" />
                 <span class="break-all">{{ cidadao.email }}</span>
               </div>
             </div>
 
-            <!-- Endereço -->
             <div v-if="enderecoCompleto" class="space-y-3 mb-6">
               <h4 class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
                 Endereço
@@ -185,7 +239,6 @@ const enderecoCompleto = computed(() => {
               </div>
             </div>
 
-            <!-- Marcadores -->
             <div v-if="cidadao.tag_ids && cidadao.tag_ids.length > 0" class="space-y-3 mb-6">
               <h4 class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
                 Marcadores
@@ -195,18 +248,17 @@ const enderecoCompleto = computed(() => {
                   v-for="tagId in cidadao.tag_ids"
                   :key="tagId"
                   :style="{
-                    backgroundColor: crmStore.tagsDisponiveis.find(t => t.id === tagId)?.cor + '20' || '#e5e7eb',
-                    color: crmStore.tagsDisponiveis.find(t => t.id === tagId)?.cor || '#6b7280',
-                    borderColor: crmStore.tagsDisponiveis.find(t => t.id === tagId)?.cor + '40' || '#d1d5db',
+                    backgroundColor: (tagPorId.get(tagId)?.cor ?? '#6b7280') + '20',
+                    color: tagPorId.get(tagId)?.cor ?? '#6b7280',
+                    borderColor: (tagPorId.get(tagId)?.cor ?? '#d1d5db') + '40',
                   }"
                   class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border"
                 >
-                  {{ crmStore.tagsDisponiveis.find(t => t.id === tagId)?.nome }}
+                  {{ tagPorId.get(tagId)?.nome }}
                 </span>
               </div>
             </div>
 
-            <!-- Perfis Profissionais -->
             <div v-if="cidadao.perfis_profissionais && cidadao.perfis_profissionais.length > 0" class="space-y-3 mb-6">
               <h4 class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
                 Perfis Profissionais
@@ -227,42 +279,34 @@ const enderecoCompleto = computed(() => {
                     <span
                       v-if="perfil.tag_id"
                       :style="{
-                        backgroundColor: crmStore.tagsDisponiveis.find(t => t.id === perfil.tag_id)?.cor + '20' || '#e5e7eb',
-                        color: crmStore.tagsDisponiveis.find(t => t.id === perfil.tag_id)?.cor || '#6b7280',
-                        borderColor: crmStore.tagsDisponiveis.find(t => t.id === perfil.tag_id)?.cor + '40' || '#d1d5db'
+                        backgroundColor: (tagPorId.get(perfil.tag_id)?.cor ?? '#6b7280') + '20',
+                        color: tagPorId.get(perfil.tag_id)?.cor ?? '#6b7280',
+                        borderColor: (tagPorId.get(perfil.tag_id)?.cor ?? '#d1d5db') + '40',
                       }"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border mt-1"
                     >
-                      {{ crmStore.tagsDisponiveis.find(t => t.id === perfil.tag_id)?.nome || 'Sem Tag' }}
+                      {{ tagPorId.get(perfil.tag_id)?.nome || 'Sem Tag' }}
                     </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            <!-- Observações -->
-            <div v-if="cidadao && cidadao.observacoes" class="space-y-3 mb-6">
+            <div v-if="cidadao.observacoes" class="space-y-3 mb-6">
               <h4 class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase tracking-wide">
                 Observações
               </h4>
               <div class="flex items-start gap-3 text-sm text-gray-700 dark:text-slate-300">
                 <FileText class="w-4 h-4 text-gray-400 dark:text-slate-500 flex-shrink-0 mt-0.5" />
-                <span>{{ cidadao.observacoes }}</span>
+                <span class="whitespace-pre-line break-words">{{ cidadao.observacoes }}</span>
               </div>
             </div>
 
-            <!-- Ações -->
             <div class="flex flex-col gap-2 pt-4 border-t border-gray-200 dark:border-slate-700">
-              <Button
-                v-permission="PERMS.crmEdit"
-                variant="primary"
-                @click="handleEditar"
-                full-width
-              >
+              <Button v-permission="PERMS.crmEdit" variant="primary" @click="handleEditar" full-width>
                 <Edit class="w-4 h-4" />
                 Editar Perfil
               </Button>
-
               <Button
                 v-permission="PERMS.crmDelete"
                 :variant="confirmandoExclusao ? 'danger' : 'ghost'"
@@ -276,10 +320,8 @@ const enderecoCompleto = computed(() => {
           </div>
         </div>
 
-        <!-- Lado Direito: Tabs -->
         <div class="lg:col-span-2">
           <div class="card">
-            <!-- Tabs Header -->
             <div class="border-b border-gray-200 dark:border-slate-700 mb-6">
               <nav class="flex gap-4" aria-label="Tabs">
                 <button
@@ -288,10 +330,10 @@ const enderecoCompleto = computed(() => {
                     abaAtiva === 'atendimentos'
                       ? 'border-primary-600 text-primary-600 dark:text-primary-400'
                       : 'border-transparent text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-600',
-                    'border-b-2 py-2 px-1 font-medium text-sm transition-colors'
+                    'border-b-2 py-2 px-1 font-medium text-sm transition-colors',
                   ]"
                 >
-                  Atendimentos ({{ atendimentosVinculados.length }})
+                  Atendimentos ({{ totalAtendimentos || atendimentosTimeline.length }})
                 </button>
                 <button
                   @click="abaAtiva = 'documentos'"
@@ -299,7 +341,7 @@ const enderecoCompleto = computed(() => {
                     abaAtiva === 'documentos'
                       ? 'border-primary-600 text-primary-600 dark:text-primary-400'
                       : 'border-transparent text-gray-600 dark:text-slate-400 hover:text-gray-900 dark:hover:text-slate-200 hover:border-gray-300 dark:hover:border-slate-600',
-                    'border-b-2 py-2 px-1 font-medium text-sm transition-colors'
+                    'border-b-2 py-2 px-1 font-medium text-sm transition-colors',
                   ]"
                 >
                   Documentos
@@ -307,20 +349,38 @@ const enderecoCompleto = computed(() => {
               </nav>
             </div>
 
-            <!-- Tab: Atendimentos -->
             <div v-if="abaAtiva === 'atendimentos'">
               <div class="mb-4">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-slate-100">
                   Histórico de Atendimentos
                 </h3>
                 <p class="text-sm text-gray-600 dark:text-slate-400 mt-1">
-                  {{ atendimentosVinculados.length }} {{ atendimentosVinculados.length === 1 ? 'atendimento vinculado' : 'atendimentos vinculados' }}
+                  {{ totalAtendimentos }}
+                  {{ totalAtendimentos === 1 ? 'atendimento vinculado' : 'atendimentos vinculados' }}
                 </p>
               </div>
-              <AtendimentosTimeline :atendimentos="atendimentosVinculados" />
+
+              <div v-if="loadingAtendimentos" class="flex justify-center py-8">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+              </div>
+              <template v-else>
+                <AtendimentosTimeline :atendimentos="atendimentosTimeline" />
+                <div v-if="hasMoreAtendimentos" class="mt-4 flex justify-center">
+                  <Button
+                    variant="secondary"
+                    :disabled="loadingMaisAtendimentos"
+                    @click="carregarMaisAtendimentos"
+                  >
+                    {{
+                      loadingMaisAtendimentos
+                        ? 'Carregando…'
+                        : `Carregar mais (${atendimentosTimeline.length} de ${totalAtendimentos})`
+                    }}
+                  </Button>
+                </div>
+              </template>
             </div>
 
-            <!-- Tab: Documentos -->
             <div v-else-if="abaAtiva === 'documentos'">
               <div class="mb-4">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-slate-100">
@@ -340,12 +400,7 @@ const enderecoCompleto = computed(() => {
         </div>
       </div>
 
-      <!-- Modal de Edição -->
-      <CidadaoModal
-        v-model="mostrarModalEdicao"
-        :cidadao="cidadao"
-        @success="handleSuccess"
-      />
+      <CidadaoModal v-model="mostrarModalEdicao" :cidadao="cidadao" @success="handleSuccess" />
     </template>
   </div>
 </template>

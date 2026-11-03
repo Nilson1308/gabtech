@@ -188,7 +188,7 @@ interface AtendimentoApi {
   sla_vencimento: string | null
   sla_horas?: number
   anexos?: AnexoApi[]
-  despachos: DespachoApi[]
+  despachos?: DespachoApi[]
   created_at: string
   updated_at: string
   rastreabilidade?: RastreabilidadeApi
@@ -284,7 +284,7 @@ function mapAtendimentoFromApi(item: AtendimentoApi): Atendimento {
     cidadao: mapCidadaoResumoFromApi(item.cidadao),
     perfil_ativo_id: item.perfil_ativo_id ? String(item.perfil_ativo_id) : undefined,
     assunto: item.assunto,
-    descricao: item.descricao,
+    descricao: item.descricao ?? '',
     macrotema: mapMacrotemaFromApi(item.macrotema),
     tags: (item.tags ?? []).map(mapTagFromApi),
     status: item.status,
@@ -552,6 +552,28 @@ export const useAtendimentosStore = defineStore('atendimentos', () => {
       atendimentos.value = await loadAllAtendimentos()
     } finally {
       loading.value = false
+    }
+  }
+
+  /** Timeline do perfil CRM — só atendimentos do cidadão, paginado (sem carregar o módulo inteiro). */
+  async function fetchAtendimentosPorCidadao(
+    cidadaoId: string,
+    page = 1,
+    pageSize = 25,
+  ): Promise<{ items: Atendimento[]; total: number; hasMore: boolean }> {
+    const params = new URLSearchParams({
+      cidadao_id: cidadaoId,
+      page: String(page),
+      page_size: String(pageSize),
+      view: 'kanban',
+    })
+    const response = await apiFetch<DrfPaginated<AtendimentoApi>>(
+      `/api/atendimentos/atendimentos/?${params.toString()}`,
+    )
+    return {
+      items: response.results.map(mapAtendimentoFromApi),
+      total: response.count,
+      hasMore: Boolean(response.next),
     }
   }
 
@@ -893,6 +915,7 @@ export const useAtendimentosStore = defineStore('atendimentos', () => {
     fetchMacrotemas,
     fetchTagsAtendimento,
     fetchAtendimentos,
+    fetchAtendimentosPorCidadao,
     kanbanPorStatus,
     kanbanTotalFiltrado,
     kanbanLoading,

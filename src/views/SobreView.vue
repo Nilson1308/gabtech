@@ -116,7 +116,7 @@ const tecnologiasBackend = [
         </div>
         <div>
           <h2 class="text-2xl font-bold text-gray-900 dark:text-slate-100">Sobre o sistema</h2>
-          <p class="text-sm text-gray-600 dark:text-slate-400">SaaS multi-tenant para operações de gabinete</p>
+          <p class="text-sm text-gray-600 dark:text-slate-400">SaaS para operações de gabinete</p>
         </div>
       </div>
 
@@ -127,9 +127,8 @@ const tecnologiasBackend = [
           controle de acesso por perfil e registro de quem alterou cada dado.
         </p>
         <p>
-          Cada mandato (tenant) opera com dados isolados. O acesso é feito com
-          <strong class="text-gray-900 dark:text-slate-100">login e senha</strong> (token JWT); não
-          há modo demonstrativo anônimo na versão em produção.
+          Cada mandato opera com dados isolados. O acesso é feito com
+          <strong class="text-gray-900 dark:text-slate-100">login e senha</strong>.
         </p>
         <p>
           O produto prioriza <strong class="text-gray-900 dark:text-slate-100">LGPD</strong>,

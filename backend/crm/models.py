@@ -189,3 +189,34 @@ class DocumentoAnexo(models.Model):
 
     def __str__(self) -> str:
         return self.nome_original
+
+
+class MigracaoLegadoRef(models.Model):
+    """Mapeamento id legado → registro GabTech (importação edsons79 e similares)."""
+
+    class Tipo(models.TextChoices):
+        CADASTRO = 'cadastro', 'Cadastro'
+        ATENDIMENTO = 'atendimento', 'Atendimento'
+        EVENTO = 'evento', 'Evento'
+        ANEXO_CADASTRO = 'anexo_cadastro', 'Anexo cadastro'
+        ANEXO_ATENDIMENTO = 'anexo_atendimento', 'Anexo atendimento'
+
+    tipo = models.CharField('tipo', max_length=32, choices=Tipo.choices)
+    legacy_id = models.PositiveIntegerField('ID legado')
+    gabtech_id = models.PositiveIntegerField('ID GabTech')
+    meta = models.JSONField('metadados', default=dict, blank=True)
+    created_at = models.DateTimeField('criado em', auto_now_add=True)
+
+    class Meta:
+        db_table = 'legado_migracao_ref'
+        verbose_name = 'referência migração legado'
+        verbose_name_plural = 'referências migração legado'
+        constraints = [
+            models.UniqueConstraint(
+                fields=('tipo', 'legacy_id'),
+                name='legado_migracao_ref_tipo_legacy_uniq',
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f'{self.tipo}:{self.legacy_id}→{self.gabtech_id}'

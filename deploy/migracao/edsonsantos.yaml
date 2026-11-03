@@ -1,0 +1,97 @@
+# Migração legado edsons79_sys → GabTech tenant gab_edsonsantos
+# Ajuste com a equipe do gabinete antes de importar em produção.
+
+tenant:
+  schema_name: gab_edsonsantos
+  domain: edsonsantos.gabtech.app.br
+
+fonte:
+  sql_path: public/db_bkp/edsonsantos/edsons79_sys.sql
+  # Pasta do servidor PHP antigo (hashes em tbCadastroDocs / tbAtendimentoDocs)
+  media_legacy_root: null  # ex.: /backup/edsons79/uploads
+
+cadastro:
+  tabela: tbCadastro
+  importar_stts: [0]          # 0=ativo; 2=duplicado; 3=recadastro/arquivo — confirmar com equipe
+  ignorar_stts: [2]
+  arquivar_stts: [3]           # opcional: importar com tag "Legado arquivado"
+  chave_estavel: legacy_id     # legado_migracao_ref + obs [legado:cad:ID]
+  deduplicar_cpf: true         # 5 CPFs repetidos no inventário
+
+atendimento:
+  importar_stts: [1, 2, 3]     # 2=concluído (2636); 1=aberto (476); 3=outros (8)
+  mapear_stts:
+    1: aberto
+    2: concluido
+    3: em_andamento
+  orfaos_vcad: criar_cidadao_placeholder  # alternativas: pular | criar_cidadao_placeholder
+  placeholder_nome: "Munícipe (cadastro legado ausente)"
+  canal_como_tag: true
+  html_descricao: sanitizar    # strip tags ou preservar conforme front
+
+usuarios_legado:
+  # legacy_id (tbUsuarios) → e-mail User no tenant (preencher antes da fase 2)
+  default_responsavel_email: gab.edsonsantos@gmail.com
+  mapa:
+    "4": null   # Alex
+    "5": null   # Alessandra
+    "9": null   # Gabriella
+    "15": null  # Juan
+    "18": null  # Sergio
+
+macrotemas:
+  # Nomes must match seed atendimentos (Saúde, Educação, …)
+  default: Assistência Social
+  por_vsecr:
+    "15": Saúde
+    "6": Educação
+    "11": Zeladoria
+    "12": Transporte
+    "2": Assistência Social
+    "16": Segurança
+    "5": Assistência Social
+    "7": Assistência Social
+    "8": Assistência Social
+    "1": Assistência Social
+    "14": Assistência Social
+    "18": Zeladoria
+    "21": Assistência Social
+  por_categoria_id:
+    "3": Saúde          # Consulta médica
+    "10": Zeladoria     # Semae
+    "12": Assistência Social  # IPTU
+    "33": Educação      # Vagas creche
+    "41": Assistência Social  # Cópia / currículo
+    "67": Assistência Social  # Emprego
+    "73": Assistência Social  # Visita
+
+agenda:
+  importar: true
+  ignorar_tabelas: [tbEventos-bkp]
+  tipo_evento_por_tag:
+    Atendimento Gabinete: { cor: "#C0E8FF", icone: calendar }
+    Reunião: { cor: "#FFC8FF", icone: users }
+    "Exame/Consulta": { cor: "#E1FFE1", icone: stethoscope }
+    Geral: { cor: "#F0F0F0", icone: calendar }
+    Cancelado: { status: cancelado }
+  status_por_stts:
+    "#FFC8C8": cancelado
+    Cancelado: cancelado
+
+anexos:
+  importar: true
+  se_arquivo_ausente: registrar_log  # não abortar lote
+  subpastas_busca: [uploads, files, media]
+  mapa_tipo_cadastro:
+    Curriculo: curriculo
+    Documento: documento_pessoal
+
+legislativo:
+  modo: fase_5                       # skip | metadados_csv | documentos_gabtech
+  tabela: tbLegislativo
+
+execucao:
+  batch_size_cadastro: 500
+  batch_size_atendimento: 200
+  dry_run_default: true
+  tabela_ref: legado_migracao_ref   # criar via migration tenant

@@ -18,6 +18,7 @@ from .geocode_service import geocodificar_endereco
 from .models import Cidadao, DocumentoAnexo, Tag
 from .serializers import (
     CidadaoBuscaSerializer,
+    CidadaoListSerializer,
     CidadaoSerializer,
     DocumentoAnexoSerializer,
     GeocodeEntradaSerializer,
@@ -26,9 +27,9 @@ from .serializers import (
 
 
 class CidadaoPagination(PageNumberPagination):
-    page_size = 10
+    page_size = 25
     page_size_query_param = 'page_size'
-    max_page_size = 500
+    max_page_size = 100
 
 
 class CidadaoViewSet(GabineteModelViewSet):
@@ -64,13 +65,11 @@ class CidadaoViewSet(GabineteModelViewSet):
         return [IsAuthenticated(), ActionRBACPermission()]
 
     def get_serializer_class(self):
-        if self.action != 'list':
-            return CidadaoSerializer
-        params = self.request.query_params
-        if params.get('search', '').strip():
-            return CidadaoBuscaSerializer
-        if params.get('anexo_categoria', '').strip():
-            return CidadaoBuscaSerializer
+        if self.action == 'list':
+            params = self.request.query_params
+            if params.get('anexo_categoria', '').strip():
+                return CidadaoBuscaSerializer
+            return CidadaoListSerializer
         return CidadaoSerializer
 
     def get_queryset(self):

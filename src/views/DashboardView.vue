@@ -29,7 +29,7 @@ onMounted(async () => {
 
   const tarefas: Promise<unknown>[] = []
   if (temPermissaoOperacional.value) {
-    tarefas.push(atendimentosStore.fetchAtendimentos(), crmStore.fetchCidadaos(1, 20))
+    tarefas.push(atendimentosStore.fetchAtendimentos(), crmStore.fetchCidadaos(1, 1))
   }
   await Promise.all(tarefas)
 
@@ -51,9 +51,7 @@ const slaAtrasados = computed(() => {
 })
 
 // 3. Base de Cidadãos
-const totalCidadaos = computed(() => {
-  return crmStore.cidadaos.length
-})
+const totalCidadaos = computed(() => crmStore.cidadaosTotalCount)
 
 // ==================== DADOS PARA COMPONENTES ====================
 

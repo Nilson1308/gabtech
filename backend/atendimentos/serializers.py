@@ -63,6 +63,7 @@ User = get_user_model()
 class MacrotemaSerializer(RastreabilidadeModelSerializer):
     class Meta:
         model = Macrotema
+        rastreabilidade_habilitada = False
         fields = ('id', 'nome', 'cor', 'icone')
 
 
@@ -366,7 +367,7 @@ class AtendimentoSerializer(RastreabilidadeModelSerializer):
 
 
 class AtendimentoKanbanSerializer(RastreabilidadeModelSerializer):
-    """Listagem leve para o quadro Kanban (sem despachos/anexos)."""
+    """Listagem leve para o quadro Kanban / timeline CRM (sem despachos/anexos)."""
 
     cidadao = CidadaoResumoSerializer(read_only=True)
     macrotema = MacrotemaSerializer(read_only=True)
@@ -376,6 +377,7 @@ class AtendimentoKanbanSerializer(RastreabilidadeModelSerializer):
 
     class Meta:
         model = Atendimento
+        rastreabilidade_habilitada = False
         fields = (
             'id',
             'protocolo',

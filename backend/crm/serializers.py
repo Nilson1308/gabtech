@@ -206,6 +206,40 @@ class PerfilProfissionalSerializer(RastreabilidadeModelSerializer):
         rastreabilidade_habilitada = False
 
 
+class EnderecoListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Endereco
+        fields = ('bairro', 'cidade', 'estado')
+
+
+class CidadaoListSerializer(RastreabilidadeModelSerializer):
+    """Listagem paginada — sem rastreabilidade nem observações (performance)."""
+
+    endereco = EnderecoListSerializer(read_only=True)
+    perfis_profissionais = PerfilProfissionalSerializer(many=True, read_only=True)
+    bairro = serializers.CharField(read_only=True)
+    tag_ids = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Cidadao
+        rastreabilidade_habilitada = False
+        fields = (
+            'id',
+            'nome',
+            'nome_social',
+            'cpf',
+            'telefone',
+            'email',
+            'bairro',
+            'endereco',
+            'tag_ids',
+            'perfis_profissionais',
+        )
+
+    def get_tag_ids(self, instance: Cidadao) -> list[int]:
+        return [tag.id for tag in instance.marcadores.all()]
+
+
 class CidadaoBuscaSerializer(RastreabilidadeModelSerializer):
     """Payload enxuto para autocomplete (sem endereço completo nem avatar base64)."""
 

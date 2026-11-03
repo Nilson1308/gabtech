@@ -140,6 +140,11 @@ function mapCidadaoFromApi(item: CidadaoApi): Cidadao {
   }
 }
 
+export interface FetchCidadaosFiltros {
+  search?: string
+  tagId?: string | null
+}
+
 function mapCidadaoToApi(data: Partial<Cidadao>) {
   return {
     nome: data.nome,
@@ -168,22 +173,11 @@ function mapCidadaoToApi(data: Partial<Cidadao>) {
 
 export const useCrmStore = defineStore('crm', () => {
   const cidadaos = ref<Cidadao[]>([])
+  const cidadaosTotalCount = ref(0)
   const loading = ref(false)
   const searchQuery = ref('')
   const tagsDisponiveis = ref<Tag[]>([])
   const tagsLoaded = ref(false)
-
-  const cidadaosFiltrados = computed(() => {
-    if (!searchQuery.value) return cidadaos.value
-
-    const query = searchQuery.value.toLowerCase()
-    return cidadaos.value.filter(cidadao =>
-      cidadao.nome.toLowerCase().includes(query) ||
-      cidadao.telefone.includes(query) ||
-      cidadao.email?.toLowerCase().includes(query) ||
-      cidadao.bairro?.toLowerCase().includes(query),
-    )
-  })
 
   async function fetchTags() {
     const data = await apiFetch<TagApi[] | DrfPaginated<TagApi>>('/api/crm/tags/')
@@ -198,53 +192,82 @@ export const useCrmStore = defineStore('crm', () => {
     }
   }
 
-  async function loadAllCidadaos(search?: string): Promise<Cidadao[]> {
-    const params = new URLSearchParams({ page_size: '500' })
-    if (search?.trim()) {
-      params.set('search', search.trim())
-    }
-
-    const aggregated: Cidadao[] = []
-    let page = 1
-    let hasNext = true
-
-    while (hasNext) {
-      params.set('page', String(page))
-      const response = await apiFetch<DrfPaginated<CidadaoApi>>(
-        `/api/crm/cidadaos/?${params.toString()}`,
-      )
-      aggregated.push(...response.results.map(mapCidadaoFromApi))
-      hasNext = Boolean(response.next)
-      page += 1
-      if (page > 50) break
-    }
-
-    return aggregated
-  }
-
-  async function fetchCidadaos(page = 1, perPage = 10): Promise<PaginatedResponse<Cidadao>> {
+  async function fetchCidadaos(
+    page = 1,
+    perPage = 25,
+    filtros?: FetchCidadaosFiltros,
+  ): Promise<PaginatedResponse<Cidadao>> {
     loading.value = true
     try {
       await ensureTags()
-      cidadaos.value = await loadAllCidadaos(searchQuery.value)
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(perPage),
+      })
+      const q = (filtros?.search ?? searchQuery.value).trim()
+      if (q) {
+        params.set('search', q)
+      }
+      if (filtros?.tagId) {
+        params.set('segmentacao_tag_ids', filtros.tagId)
+      }
 
-      const filtered = cidadaosFiltrados.value
-      const start = (page - 1) * perPage
-      const end = start + perPage
-      const paginatedData = filtered.slice(start, end)
+      const response = await apiFetch<DrfPaginated<CidadaoApi>>(
+        `/api/crm/cidadaos/?${params.toString()}`,
+      )
+      const data = response.results.map(mapCidadaoFromApi)
+      cidadaos.value = data
+      cidadaosTotalCount.value = response.count
 
       return {
-        data: paginatedData,
+        data,
         meta: {
           currentPage: page,
           perPage,
-          totalPages: Math.max(1, Math.ceil(filtered.length / perPage)),
-          totalItems: filtered.length,
+          totalPages: Math.max(1, Math.ceil(response.count / perPage)),
+          totalItems: response.count,
         },
       }
     } finally {
       loading.value = false
     }
+  }
+
+  /** Exportação CSV — percorre páginas na API (não carrega tudo de uma vez). */
+  async function iterarCidadaosFiltrados(
+    filtros: FetchCidadaosFiltros,
+    onPage: (items: Cidadao[]) => void | Promise<void>,
+  ): Promise<number> {
+    await ensureTags()
+    const pageSize = 100
+    let page = 1
+    let total = 0
+    let hasNext = true
+    while (hasNext) {
+      const params = new URLSearchParams({
+        page: String(page),
+        page_size: String(pageSize),
+      })
+      const q = (filtros.search ?? '').trim()
+      if (q) {
+        params.set('search', q)
+      }
+      if (filtros.tagId) {
+        params.set('segmentacao_tag_ids', filtros.tagId)
+      }
+      const response = await apiFetch<DrfPaginated<CidadaoApi>>(
+        `/api/crm/cidadaos/?${params.toString()}`,
+      )
+      const batch = response.results.map(mapCidadaoFromApi)
+      await onPage(batch)
+      total += batch.length
+      hasNext = Boolean(response.next)
+      page += 1
+      if (page > 500) {
+        break
+      }
+    }
+    return total
   }
 
   /** Busca na API (não depende da lista paginada em memória). */
@@ -294,8 +317,10 @@ export const useCrmStore = defineStore('crm', () => {
     return response.count ?? 0
   }
 
-  async function getCidadaoById(id: string): Promise<Cidadao | null> {
-    loading.value = true
+  async function getCidadaoById(id: string, options?: { silent?: boolean }): Promise<Cidadao | null> {
+    if (!options?.silent) {
+      loading.value = true
+    }
     try {
       await ensureTags()
       const data = await apiFetch<CidadaoApi>(`/api/crm/cidadaos/${id}/`)
@@ -310,7 +335,9 @@ export const useCrmStore = defineStore('crm', () => {
     } catch {
       return null
     } finally {
-      loading.value = false
+      if (!options?.silent) {
+        loading.value = false
+      }
     }
   }
 
@@ -323,6 +350,7 @@ export const useCrmStore = defineStore('crm', () => {
       })
       const mapped = mapCidadaoFromApi(created)
       cidadaos.value.unshift(mapped)
+      cidadaosTotalCount.value += 1
       return mapped
     } finally {
       loading.value = false
@@ -359,6 +387,7 @@ export const useCrmStore = defineStore('crm', () => {
       const index = cidadaos.value.findIndex(c => c.id === id)
       if (index > -1) {
         cidadaos.value.splice(index, 1)
+        cidadaosTotalCount.value = Math.max(0, cidadaosTotalCount.value - 1)
       }
       return true
     } catch {
@@ -538,12 +567,13 @@ export const useCrmStore = defineStore('crm', () => {
 
   return {
     cidadaos,
+    cidadaosTotalCount,
     loading,
     searchQuery,
     tagsDisponiveis,
-    cidadaosFiltrados,
     fetchTags,
     fetchCidadaos,
+    iterarCidadaosFiltrados,
     searchCidadaos,
     countCidadaosByTagIds,
     getCidadaoById,

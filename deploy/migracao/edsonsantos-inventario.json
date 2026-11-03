@@ -1,0 +1,55 @@
+{
+  "sql_path": "/var/www/gabtech/public/db_bkp/edsonsantos/edsons79_sys.sql",
+  "cadastro_total": 5691,
+  "cadastro_stts": {
+    "0": 4278,
+    "1": 15,
+    "2": 486,
+    "3": 905
+  },
+  "cadastro_cpf_preenchido": 577,
+  "cadastro_cpf_vazio": 5114,
+  "cadastro_cpf_duplicados": 5,
+  "atendimento_total": 3133,
+  "atendimento_stts": {
+    "1": 476,
+    "2": 2636,
+    "3": 8
+  },
+  "atendimento_orfaos_vcad": 434,
+  "atendimento_vusu": {
+    "4": 1486,
+    "5": 1009,
+    "6": 7,
+    "9": 31,
+    "11": 13,
+    "15": 262,
+    "17": 2,
+    "18": 323
+  },
+  "categorias_total": 73,
+  "eventos_total": 5393,
+  "usuarios_legado": {
+    "1": "Admin",
+    "2": "Luiz",
+    "3": "Lauro",
+    "4": "Alex",
+    "5": "Alessandra",
+    "6": "Davi",
+    "7": "Edson",
+    "9": "Gabriella",
+    "10": "Natalyn",
+    "11": "Eduarda",
+    "12": "Outros",
+    "13": "Gustavo",
+    "14": "Rinaldo",
+    "15": "Juan",
+    "16": "Chefegab",
+    "17": "Calebe",
+    "18": "Sergio"
+  },
+  "legislativo_total": 875,
+  "cadastro_docs_total": 575,
+  "atendimento_docs_total": 3523,
+  "vcad_tag_total": 1778
+}

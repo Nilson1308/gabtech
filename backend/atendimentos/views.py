@@ -68,6 +68,10 @@ def filtrar_atendimentos_por_query(
     if tag_ids:
         queryset = queryset.filter(tags__in=tag_ids).distinct()
 
+    cidadao_raw = (params.get('cidadao_id') or params.get('cidadao') or '').strip()
+    if cidadao_raw.isdigit():
+        queryset = queryset.filter(cidadao_id=int(cidadao_raw))
+
     return queryset
 
 User = get_user_model()
@@ -183,13 +187,22 @@ class AtendimentoViewSet(GabineteModelViewSet):
             return 'editar_atend'
         return self.rbac_action_map.get(self.action)
 
+    def _listagem_leve(self) -> bool:
+        if self.action != 'list':
+            return False
+        params = self.request.query_params
+        if params.get('view') == 'kanban':
+            return True
+        cidadao = (params.get('cidadao_id') or params.get('cidadao') or '').strip()
+        return cidadao.isdigit()
+
     def get_serializer_class(self):
-        if self.action == 'list' and self.request.query_params.get('view') == 'kanban':
+        if self._listagem_leve():
             return AtendimentoKanbanSerializer
         return AtendimentoSerializer
 
     def get_queryset(self):
-        if self.action == 'list' and self.request.query_params.get('view') == 'kanban':
+        if self._listagem_leve():
             qs = (
                 Atendimento.objects.select_related(
                     'cidadao',
@@ -233,7 +246,9 @@ class AtendimentoViewSet(GabineteModelViewSet):
 
     def list(self, request, *args, **kwargs):
         queryset = self.filter_queryset(self.get_queryset())
-        if request.query_params.get('view') == 'kanban':
+        if request.query_params.get('view') == 'kanban' or (
+            request.query_params.get('cidadao_id') or request.query_params.get('cidadao') or ''
+        ).strip().isdigit():
             queryset = queryset.order_by('-created_at')
         page = self.paginate_queryset(queryset)
         if page is not None:
