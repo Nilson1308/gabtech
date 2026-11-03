@@ -117,14 +117,9 @@ npm install --legacy-peer-deps [package]
 
 ## 📚 Documentação
 
-- **`README.md`** - Visão geral do projeto
-- **`ESTRUTURA_PROJETO.md`** - Lista completa de arquivos
-- **`GUIA_DESENVOLVIMENTO.md`** - Próximas etapas
-- **`EXEMPLOS_CODIGO.md`** - Templates de componentes
-- **`ETAPA_1_2_COMPLETA.md`** - Detalhes técnicos
-- **`GUIA_VISUAL_LOGIN_LAYOUT.md`** - Diagramas visuais
-- **`CHECKLIST_VALIDACAO.md`** - Checklist de testes
-- **`RESUMO_ETAPAS_1_2.md`** - Resumo executivo
+- **[README.md](README.md)** — visão geral
+- **[docs/README.md](docs/README.md)** — índice (dev, produção, arquitetura)
+- **[docs/historico-desenvolvimento/](docs/historico-desenvolvimento/README.md)** — registros de etapas/sprints (legado)
 
 ## 🐛 Troubleshooting
 
