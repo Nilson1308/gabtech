@@ -1,0 +1,21 @@
+# PostgreSQL dedicado ao GabTech (dev). Porta 5433 evita conflito com Postgres local na 5432.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: gabtech-postgres
+    environment:
+      POSTGRES_USER: gabtech
+      POSTGRES_PASSWORD: gabtech
+      POSTGRES_DB: gabtech
+    ports:
+      - '5433:5432'
+    volumes:
+      - gabtech_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U gabtech -d gabtech']
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  gabtech_pgdata:

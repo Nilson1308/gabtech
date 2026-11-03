@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Atalho: sempre usa o venv do projeto (django-tenants, DRF, etc.)
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+exec "$ROOT/.venv/bin/python" "$ROOT/manage.py" "$@"
