@@ -195,7 +195,7 @@ async function enviar() {
             required
             minlength="3"
             maxlength="50"
-            pattern="[a-z0-9-]+"
+            pattern="[a-z0-9\\-]+"
             placeholder="ex: vereador-silva"
             @blur="slugify"
           >

@@ -45,12 +45,14 @@ def executar_provisionamento(cadastro_id: uuid.UUID | str, senha_admin: str) -> 
             cadastro.schema_name = schema_name
             cadastro.domain = domain
             cadastro.concluido_em = timezone.now()
+            cadastro.erro_mensagem = ''
             cadastro.save(
                 update_fields=[
                     'status',
                     'schema_name',
                     'domain',
                     'concluido_em',
+                    'erro_mensagem',
                     'updated_at',
                 ],
             )

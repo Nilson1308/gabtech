@@ -70,6 +70,7 @@ class CadastroGabineteEntradaSerializer(serializers.Serializer):
 
 
 class CadastroGabineteStatusSerializer(serializers.ModelSerializer):
+    logo = serializers.SerializerMethodField()
     login_url = serializers.SerializerMethodField()
     api_base_url = serializers.SerializerMethodField()
     app_url_sugerida = serializers.SerializerMethodField()
@@ -95,6 +96,11 @@ class CadastroGabineteStatusSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+    def get_logo(self, obj: CadastroGabinete) -> str:
+        if obj.status != CadastroGabinete.Status.CONCLUIDO:
+            return ''
+        return obj.logo or ''
+
     def get_login_url(self, obj: CadastroGabinete) -> str | None:
         if obj.status != CadastroGabinete.Status.CONCLUIDO or not obj.domain:
             return None
@@ -112,6 +118,11 @@ class CadastroGabineteStatusSerializer(serializers.ModelSerializer):
     def get_app_url_sugerida(self, obj: CadastroGabinete) -> str | None:
         if obj.status != CadastroGabinete.Status.CONCLUIDO or not obj.domain:
             return None
-        port = getattr(settings, 'GABTECH_TENANT_APP_PORT', '5174')
+        port = str(getattr(settings, 'GABTECH_TENANT_APP_PORT', '5174'))
         scheme = getattr(settings, 'GABTECH_TENANT_URL_SCHEME', 'http')
+        omit_port = (scheme == 'https' and port in ('443', '')) or (
+            scheme == 'http' and port in ('80', '')
+        )
+        if omit_port:
+            return f'{scheme}://{obj.domain}/login'
         return f'{scheme}://{obj.domain}:{port}/login'

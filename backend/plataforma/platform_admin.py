@@ -46,6 +46,16 @@ class PlatformOperadorPermissionMixin:
     def has_delete_permission(self, request, obj=None):
         return _operador_autorizado(request)
 
+    def log_addition(self, request, object, message):
+        # OperadorPlataforma não é auth.User; admin não está no schema public.
+        return
+
+    def log_change(self, request, object, message):
+        return
+
+    def log_deletion(self, request, object, object_repr, message):
+        return
+
 
 class PlatformAdminSite(AdminSite):
     site_header = 'GabTech — Administração da plataforma'

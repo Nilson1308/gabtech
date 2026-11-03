@@ -9,7 +9,7 @@ User=www-data
 Group=www-data
 WorkingDirectory=/var/www/gabtech/backend
 EnvironmentFile=/var/www/gabtech/backend/.env
-ExecStart=/var/www/gabtech/backend/.venv/bin/celery -A config worker -l info -Q default -c 2
+ExecStart=/var/www/gabtech/backend/.venv/bin/celery -A config worker -l info -Q celery -c 2
 Restart=on-failure
 RestartSec=10
 

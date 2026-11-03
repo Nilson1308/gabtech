@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { resolveTenantApiBaseUrl, syncTenantApiBaseFromBrowser } from '@/services/api'
 import { Mail, Lock, LogIn, AlertCircle, Moon, Sun } from 'lucide-vue-next'
@@ -262,12 +262,6 @@ const handleSubmit = async () => {
           API: {{ apiBaseDev }}
         </p>
 
-        <p class="mt-8 text-center text-sm text-gray-600 dark:text-slate-400">
-          Primeiro acesso?
-          <RouterLink to="/cadastro-gabinete" class="text-primary-600 dark:text-primary-400 font-medium">
-            Criar meu gabinete
-          </RouterLink>
-        </p>
       </div>
     </div>
   </div>

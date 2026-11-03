@@ -154,8 +154,11 @@ def provisionar_gabinete_completo(dados: DadosNovoGabinete) -> tuple[Gabinete, s
 
 
 def url_api_tenant(domain: str) -> str:
-    port = getattr(settings, 'GABTECH_TENANT_API_PORT', '')
+    port = str(getattr(settings, 'GABTECH_TENANT_API_PORT', '') or '')
     scheme = getattr(settings, 'GABTECH_TENANT_URL_SCHEME', 'http')
-    if port:
-        return f'{scheme}://{domain}:{port}'
-    return f'{scheme}://{domain}'
+    omit_port = (scheme == 'https' and port in ('443', '')) or (
+        scheme == 'http' and port in ('80', '')
+    )
+    if omit_port:
+        return f'{scheme}://{domain}'
+    return f'{scheme}://{domain}:{port}'
