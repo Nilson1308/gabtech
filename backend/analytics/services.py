@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 from decimal import Decimal
 from typing import Any
 
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from agenda.models import Evento
@@ -15,6 +16,9 @@ from auditoria.models import EventoAuditoria
 from auditoria.services import montar_rastreabilidade
 from crm.models import Cidadao
 from documentos.models import Documento
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 MOGI_CENTRO = {'lat': -23.5227, 'lng': -46.1879, 'zoom': 12}
 
@@ -51,63 +55,67 @@ def _is_atrasado(atendimento: Atendimento, agora) -> bool:
 def build_executivo(user) -> dict[str, Any]:
     agora = timezone.now()
     qs = _atendimentos_visiveis(user)
-    lista = list(qs)
 
-    por_responsavel: dict[int, dict[str, Any]] = defaultdict(
-        lambda: {
-            'concluidos': 0,
-            'em_andamento': 0,
-            'atrasados': 0,
-            'total': 0,
-            'nome': '',
-        }
+    atrasado_filter = Q(
+        ~Q(status=Atendimento.Status.CONCLUIDO),
+        sla_vencimento__isnull=False,
+        sla_vencimento__lt=agora,
     )
+    concluido_filter = Q(status=Atendimento.Status.CONCLUIDO)
 
-    gargalo_contagem: Counter[int] = Counter()
-    macrotema_map: dict[int, Macrotema] = {}
-
-    for att in lista:
-        rid = att.responsavel_id
-        bucket = por_responsavel[rid]
-        bucket['nome'] = att.responsavel.nome if att.responsavel else '—'
-        bucket['total'] += 1
-        if att.status == Atendimento.Status.CONCLUIDO:
-            bucket['concluidos'] += 1
-        else:
-            bucket['em_andamento'] += 1
-            if _is_atrasado(att, agora):
-                bucket['atrasados'] += 1
-                gargalo_contagem[att.macrotema_id] += 1
-                macrotema_map[att.macrotema_id] = att.macrotema
+    por_resp = (
+        qs.values('responsavel_id')
+        .annotate(
+            total=Count('id'),
+            concluidos=Count('id', filter=concluido_filter),
+            atrasados=Count('id', filter=atrasado_filter),
+        )
+        .order_by('-total')
+    )
+    resp_ids = [row['responsavel_id'] for row in por_resp]
+    nomes_resp = {
+        u.pk: u.nome for u in User.objects.filter(pk__in=resp_ids).select_related('perfil')
+    }
 
     produtividade = []
-    for uid, dados in por_responsavel.items():
-        total = dados['total']
-        concluidos = dados['concluidos']
+    for row in por_resp:
+        total = row['total']
+        concluidos = row['concluidos']
+        atrasados = row['atrasados']
+        em_andamento = total - concluidos
+        nome = nomes_resp.get(row['responsavel_id'], '—')
         taxa = round((concluidos / total) * 100, 1) if total else 0.0
         produtividade.append(
             {
-                'user_id': str(uid),
-                'nome_usuario': dados['nome'],
+                'user_id': str(row['responsavel_id']),
+                'nome_usuario': nome,
                 'concluidos': concluidos,
-                'atrasados': dados['atrasados'],
-                'em_andamento': dados['em_andamento'],
+                'atrasados': atrasados,
+                'em_andamento': em_andamento,
                 'total': total,
                 'taxa_sucesso': taxa,
             }
         )
     produtividade.sort(key=lambda x: (-x['taxa_sucesso'], -x['concluidos']))
 
-    gargalos = []
-    for mid, qtd in gargalo_contagem.most_common():
-        macro = macrotema_map[mid]
-        gargalos.append(
-            {
-                'macrotema': macro.nome,
-                'atrasados': qtd,
-                'cor': macro.cor,
-            }
+    gargalos_qs = (
+        qs.filter(
+            ~Q(status=Atendimento.Status.CONCLUIDO),
+            sla_vencimento__isnull=False,
+            sla_vencimento__lt=agora,
         )
+        .values('macrotema_id', 'macrotema__nome', 'macrotema__cor')
+        .annotate(atrasados=Count('id'))
+        .order_by('-atrasados')[:15]
+    )
+    gargalos = [
+        {
+            'macrotema': row['macrotema__nome'] or '—',
+            'atrasados': row['atrasados'],
+            'cor': row['macrotema__cor'] or '#6b7280',
+        }
+        for row in gargalos_qs
+    ]
 
     atendimento_ids = qs.values_list('pk', flat=True)
     atividades = _montar_atividades(user, atendimento_ids)

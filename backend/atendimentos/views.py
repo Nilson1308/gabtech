@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from usuarios.permissions import ActionRBACPermission
 
 from .anexo_serializers import AnexoSerializer
+from .dashboard_service import build_dashboard_resumo
 from .export_csv import build_atendimentos_csv_response, filtrar_queryset_exportacao
 from .models import Anexo, Atendimento, ConfiguracaoSla, Despacho, Macrotema
 from .visibility import filtrar_atendimentos_visiveis
@@ -173,6 +174,7 @@ class AtendimentoViewSet(GabineteModelViewSet):
         'destroy': 'excluir_atend',
         'exportar_csv': 'exportar_atend',
         'kanban_resumo': 'ler_atend',
+        'dashboard_resumo': 'ler_atend',
     }
 
     def get_rbac_codename(self):
@@ -256,6 +258,10 @@ class AtendimentoViewSet(GabineteModelViewSet):
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='dashboard-resumo')
+    def dashboard_resumo(self, request):
+        return Response(build_dashboard_resumo(request.user))
 
     @action(detail=False, methods=['get'], url_path='kanban-resumo')
     def kanban_resumo(self, request):

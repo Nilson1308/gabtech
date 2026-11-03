@@ -22,6 +22,24 @@ export type ExportAtendimentosCsvFiltros = {
 
 export type KanbanFiltros = ExportAtendimentosCsvFiltros
 
+export interface DashboardResumo {
+  abertos: number
+  slaAtrasados: number
+  totalAtendimentos: number
+  porMacrotema: Array<{ macrotema: string; quantidade: number; cor: string }>
+  recentes: Atendimento[]
+  topTags: Array<{ tag: Tag; count: number }>
+}
+
+interface DashboardResumoApi {
+  abertos: number
+  sla_atrasados: number
+  total_atendimentos: number
+  por_macrotema: Array<{ macrotema: string; quantidade: number; cor: string }>
+  recentes: AtendimentoApi[]
+  top_tags: Array<{ tag: TagApi; count: number }>
+}
+
 const KANBAN_PAGE_SIZE = 25
 
 const STATUS_KANBAN: StatusAtendimento[] = [
@@ -315,6 +333,9 @@ export const useAtendimentosStore = defineStore('atendimentos', () => {
   const kanbanTotalFiltrado = ref(0)
   const kanbanLoading = ref(false)
 
+  const dashboardResumo = ref<DashboardResumo | null>(null)
+  const dashboardLoading = ref(false)
+
   const atendimentosPorStatus = computed(() => ({
     aberto: atendimentos.value.filter(a => a.status === 'aberto'),
     em_andamento: atendimentos.value.filter(a => a.status === 'em_andamento'),
@@ -556,6 +577,34 @@ export const useAtendimentosStore = defineStore('atendimentos', () => {
   }
 
   /** Timeline do perfil CRM — só atendimentos do cidadão, paginado (sem carregar o módulo inteiro). */
+  async function fetchDashboardResumo(): Promise<DashboardResumo> {
+    dashboardLoading.value = true
+    try {
+      const data = await apiFetch<DashboardResumoApi>(
+        '/api/atendimentos/atendimentos/dashboard-resumo/',
+      )
+      const mapped: DashboardResumo = {
+        abertos: data.abertos,
+        slaAtrasados: data.sla_atrasados,
+        totalAtendimentos: data.total_atendimentos,
+        porMacrotema: data.por_macrotema.map(row => ({
+          macrotema: row.macrotema,
+          quantidade: row.quantidade,
+          cor: row.cor,
+        })),
+        recentes: data.recentes.map(mapAtendimentoFromApi),
+        topTags: data.top_tags.map(row => ({
+          tag: mapTagFromApi(row.tag),
+          count: row.count,
+        })),
+      }
+      dashboardResumo.value = mapped
+      return mapped
+    } finally {
+      dashboardLoading.value = false
+    }
+  }
+
   async function fetchAtendimentosPorCidadao(
     cidadaoId: string,
     page = 1,
@@ -915,6 +964,9 @@ export const useAtendimentosStore = defineStore('atendimentos', () => {
     fetchMacrotemas,
     fetchTagsAtendimento,
     fetchAtendimentos,
+    fetchDashboardResumo,
+    dashboardResumo,
+    dashboardLoading,
     fetchAtendimentosPorCidadao,
     kanbanPorStatus,
     kanbanTotalFiltrado,

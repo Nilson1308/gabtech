@@ -29,7 +29,7 @@ onMounted(async () => {
 
   const tarefas: Promise<unknown>[] = []
   if (temPermissaoOperacional.value) {
-    tarefas.push(atendimentosStore.fetchAtendimentos(), crmStore.fetchCidadaos(1, 1))
+    tarefas.push(atendimentosStore.fetchDashboardResumo(), crmStore.fetchCidadaos(1, 1))
   }
   await Promise.all(tarefas)
 
@@ -41,14 +41,11 @@ onMounted(async () => {
 // ==================== MÉTRICAS COMPUTADAS ====================
 
 // 1. Atendimentos Abertos (não concluídos)
-const atendimentosAbertos = computed(() => {
-  return atendimentosStore.atendimentos.filter(a => a.status !== 'concluido').length
-})
+const resumoOperacional = computed(() => atendimentosStore.dashboardResumo)
 
-// 2. SLA em Atraso
-const slaAtrasados = computed(() => {
-  return atendimentosStore.atendimentosAtrasados.length
-})
+const atendimentosAbertos = computed(() => resumoOperacional.value?.abertos ?? 0)
+
+const slaAtrasados = computed(() => resumoOperacional.value?.slaAtrasados ?? 0)
 
 // 3. Base de Cidadãos
 const totalCidadaos = computed(() => crmStore.cidadaosTotalCount)
@@ -56,16 +53,11 @@ const totalCidadaos = computed(() => crmStore.cidadaosTotalCount)
 // ==================== DADOS PARA COMPONENTES ====================
 
 // Dados do gráfico de macrotemas
-const dadosGrafico = computed(() => {
-  return atendimentosStore.atendimentosPorMacrotema
-})
+const dadosGrafico = computed(() => resumoOperacional.value?.porMacrotema ?? [])
 
-// Últimos 5 atendimentos
-const ultimosAtendimentos = computed(() => {
-  return [...atendimentosStore.atendimentos]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5)
-})
+const ultimosAtendimentos = computed(() => resumoOperacional.value?.recentes ?? [])
+
+const topTagsDashboard = computed(() => resumoOperacional.value?.topTags ?? [])
 
 // ==================== LOADING STATE ====================
 
@@ -73,7 +65,7 @@ const carregando = computed(() => {
   if (!temPermissaoOperacional.value) {
     return false
   }
-  return atendimentosStore.loading || crmStore.loading
+  return atendimentosStore.dashboardLoading || crmStore.loading
 })
 
 // ==================== HELPERS PARA VISÃO EXECUTIVA ====================
@@ -220,13 +212,13 @@ function formatarTempoRelativo(timestamp: string): string {
           </p>
         </div>
 
-        <div v-if="atendimentosStore.topTagsAtendimento.length === 0" class="text-center py-8 text-gray-500 dark:text-slate-400">
+        <div v-if="topTagsDashboard.length === 0" class="text-center py-8 text-gray-500 dark:text-slate-400">
           Nenhum dado disponível ainda
         </div>
 
         <div v-else class="space-y-3">
           <div
-            v-for="(item, index) in atendimentosStore.topTagsAtendimento"
+            v-for="(item, index) in topTagsDashboard"
             :key="item.tag.id"
             class="flex items-center gap-3 p-3 bg-gray-50 dark:bg-slate-800 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
           >
