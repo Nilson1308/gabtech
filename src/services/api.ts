@@ -5,6 +5,18 @@
 const TOKEN_KEY = 'token'
 export const TENANT_API_STORAGE_KEY = 'gabtech_api_base'
 
+function apiPortSuffix(): string {
+  const port = (import.meta.env.VITE_API_PORT as string | undefined) ?? '8800'
+  if (port === '443' || port === '80') {
+    return ''
+  }
+  return `:${port}`
+}
+
+function originForHostname(protocol: string, hostname: string): string {
+  return `${protocol}//${hostname}${apiPortSuffix()}`
+}
+
 /** API do schema public (cadastro de gabinetes). */
 export function getPlatformApiBaseUrl(): string {
   const env = import.meta.env.VITE_PLATFORM_API_BASE_URL as string | undefined
@@ -16,6 +28,9 @@ export function getPlatformApiBaseUrl(): string {
     const { protocol, hostname } = window.location
     // localhost mapeado a tenant no dev — 127.0.0.1 cai no schema public
     const host = hostname === 'localhost' ? '127.0.0.1' : hostname
+    if (port === '443' || port === '80') {
+      return `${protocol}//${host}`
+    }
     return `${protocol}//${host}:${port}`
   }
   return 'http://127.0.0.1:8800'
@@ -25,7 +40,7 @@ export function setTenantApiBaseUrl(url: string): void {
   localStorage.setItem(TENANT_API_STORAGE_KEY, url.replace(/\/$/, ''))
 }
 
-/** Host de tenant no dev (*.localhost, exceto host nu "localhost"). */
+/** Host de tenant no dev (*.localhost) ou produção (*.{suffix}). */
 export function tenantHostnameFromBrowser(): string | null {
   if (typeof window === 'undefined') {
     return null
@@ -37,6 +52,14 @@ export function tenantHostnameFromBrowser(): string | null {
   if (hostname.includes('.') && hostname.endsWith('.localhost')) {
     return hostname
   }
+  const suffix = (import.meta.env.VITE_TENANT_DOMAIN_SUFFIX as string | undefined)?.trim()
+  if (suffix && hostname !== suffix && hostname.endsWith(`.${suffix}`)) {
+    const label = hostname.slice(0, -(suffix.length + 1))
+    if (label.includes('.')) {
+      return null
+    }
+    return hostname
+  }
   return null
 }
 
@@ -45,15 +68,14 @@ export function syncTenantApiBaseFromBrowser(): void {
   if (typeof window === 'undefined') {
     return
   }
-  const port = (import.meta.env.VITE_API_PORT as string | undefined) ?? '8800'
   const { protocol, hostname } = window.location
   const tenantHost = tenantHostnameFromBrowser()
   if (tenantHost) {
-    setTenantApiBaseUrl(`${protocol}//${tenantHost}:${port}`)
+    setTenantApiBaseUrl(originForHostname(protocol, tenantHost))
     return
   }
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    setTenantApiBaseUrl(`${protocol}//${hostname}:${port}`)
+    setTenantApiBaseUrl(originForHostname(protocol, hostname))
   }
 }
 
@@ -64,15 +86,18 @@ export function resolveTenantApiBaseUrl(): string {
     return env.replace(/\/$/, '')
   }
   if (typeof window !== 'undefined') {
-    const port = (import.meta.env.VITE_API_PORT as string | undefined) ?? '8800'
     const { hostname, protocol } = window.location
     const tenantHost = tenantHostnameFromBrowser()
     if (tenantHost) {
-      return `${protocol}//${tenantHost}:${port}`
+      return originForHostname(protocol, tenantHost)
     }
     // localhost = tenant demo (domínio cadastrado); não reutilizar API de outro gabinete no localStorage
     if (hostname === 'localhost' || hostname === '127.0.0.1') {
-      return `${protocol}//${hostname}:${port}`
+      return originForHostname(protocol, hostname)
+    }
+    const suffix = (import.meta.env.VITE_TENANT_DOMAIN_SUFFIX as string | undefined)?.trim()
+    if (suffix && (hostname === suffix || hostname.endsWith(`.${suffix}`))) {
+      return originForHostname(protocol, hostname)
     }
     const stored = localStorage.getItem(TENANT_API_STORAGE_KEY)
     if (stored?.trim()) {

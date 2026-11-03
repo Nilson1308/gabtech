@@ -13,7 +13,7 @@ import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import listPlugin from '@fullcalendar/list'
 import ptBrLocale from '@fullcalendar/core/locales/pt-br'
-import type { EventClickArg, DateSelectArg } from '@fullcalendar/core'
+import type { CalendarOptions, DateSelectArg, EventClickArg } from '@fullcalendar/core'
 import { 
   Plus, 
   Calendar,
@@ -106,8 +106,39 @@ function sincronizarEventosCalendario() {
   }
 }
 
+const handleEventClick = (clickInfo: EventClickArg) => {
+  const eventoOriginal = agendaStore.eventos.find(e => e.id === clickInfo.event.id)
+  if (eventoOriginal) {
+    const tipoEvento = agendaStore.tiposEventoAtivos.find(t => t.id === eventoOriginal.tipoId)
+    const tiposEspeciais = ['cerimonial', 'audiencia', 'sessao']
+
+    if (tipoEvento && tiposEspeciais.some(t => tipoEvento.nome.toLowerCase().includes(t))) {
+      router.push(`/eventos/evento-1`)
+    } else {
+      abrirEdicaoEvento(eventoOriginal)
+    }
+  }
+}
+
+const handleDateSelect = (selectInfo: DateSelectArg) => {
+  eventoEditando.value = null
+
+  const start = selectInfo.start
+  const ano = start.getFullYear()
+  const mes = String(start.getMonth() + 1).padStart(2, '0')
+  const dia = String(start.getDate()).padStart(2, '0')
+  const hora = String(start.getHours()).padStart(2, '0')
+  const minuto = String(start.getMinutes()).padStart(2, '0')
+
+  localStorage.setItem('novoEventoData', `${ano}-${mes}-${dia}`)
+  localStorage.setItem('novoEventoHora', `${hora}:${minuto}`)
+
+  mostrarModalEvento.value = true
+  selectInfo.view.calendar.unselect()
+}
+
 // FullCalendar Options (eventos sincronizados via watch — resetOptions nem sempre reflete filtros)
-const calendarOptions = {
+const calendarOptions: CalendarOptions = {
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin],
   initialView: 'dayGridMonth',
   locale: ptBrLocale,
@@ -148,7 +179,9 @@ const calendarOptions = {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false
-  }
+  },
+  eventClick: handleEventClick,
+  select: handleDateSelect,
 }
 
 function inicializarFiltros() {
@@ -221,48 +254,6 @@ const abrirEdicaoEvento = (evento: Evento) => {
   mostrarModalEvento.value = true
 }
 
-const handleEventClick = (clickInfo: EventClickArg) => {
-  const eventoOriginal = agendaStore.eventos.find(e => e.id === clickInfo.event.id)
-  if (eventoOriginal) {
-    // Verificar se é um evento especial (Cerimonial ou Audiência)
-    const tipoEvento = agendaStore.tiposEventoAtivos.find(t => t.id === eventoOriginal.tipoId)
-    const tiposEspeciais = ['cerimonial', 'audiencia', 'sessao']
-    
-    if (tipoEvento && tiposEspeciais.some(t => tipoEvento.nome.toLowerCase().includes(t))) {
-      // Navegar para o dashboard do evento
-      // Por enquanto vamos usar um ID fixo (evento-1) já que ainda não temos a integração completa
-      // Em produção, você criaria eventos de cerimonial vinculados aos eventos da agenda
-      router.push(`/eventos/evento-1`)
-    } else {
-      // Abrir modal de edição para eventos normais
-      abrirEdicaoEvento(eventoOriginal)
-    }
-  }
-}
-
-const handleDateSelect = (selectInfo: DateSelectArg) => {
-  // Criar novo evento na data/hora selecionada
-  eventoEditando.value = null
-  
-  const start = selectInfo.start
-  const ano = start.getFullYear()
-  const mes = String(start.getMonth() + 1).padStart(2, '0')
-  const dia = String(start.getDate()).padStart(2, '0')
-  const hora = String(start.getHours()).padStart(2, '0')
-  const minuto = String(start.getMinutes()).padStart(2, '0')
-  
-  // Armazenar data e hora inicial para o modal
-  localStorage.setItem('novoEventoData', `${ano}-${mes}-${dia}`)
-  localStorage.setItem('novoEventoHora', `${hora}:${minuto}`)
-  
-  mostrarModalEvento.value = true
-  
-  // Limpar seleção
-  selectInfo.view.calendar.unselect()
-}
-
-calendarOptions.eventClick = handleEventClick
-calendarOptions.select = handleDateSelect
 </script>
 
 <template>

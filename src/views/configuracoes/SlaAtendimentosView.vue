@@ -118,7 +118,8 @@ function equivalenteDias(key: keyof typeof prazos.value): string {
   return `${dias.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} dias`
 }
 
-let horasCache: typeof prazos.value | null = null
+type HorasSla = ReturnType<typeof horasFromApi>
+let horasCache: HorasSla | null = null
 
 watch(unidade, (nova, antiga) => {
   if (!horasCache) return
@@ -138,12 +139,12 @@ watch(unidade, (nova, antiga) => {
 watch(
   prazos,
   () => {
-    horasCache = horasParaSalvar()
+    const salvo = horasParaSalvar()
     horasCache = {
-      baixa: horasCache.horas_baixa,
-      media: horasCache.horas_media,
-      alta: horasCache.horas_alta,
-      urgente: horasCache.horas_urgente,
+      baixa: salvo.horas_baixa,
+      media: salvo.horas_media,
+      alta: salvo.horas_alta,
+      urgente: salvo.horas_urgente,
     }
   },
   { deep: true },

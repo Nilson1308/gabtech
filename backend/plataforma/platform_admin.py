@@ -24,13 +24,46 @@ def operador_logado(request) -> OperadorPlataforma | None:
         return None
 
 
+def _operador_autorizado(request) -> bool:
+    return operador_logado(request) is not None
+
+
+class PlatformOperadorPermissionMixin:
+    """OperadorPlataforma não é auth.User — liberar CRUD para sessão de ops."""
+
+    def has_module_permission(self, request):
+        return _operador_autorizado(request)
+
+    def has_view_permission(self, request, obj=None):
+        return _operador_autorizado(request)
+
+    def has_add_permission(self, request, obj=None):
+        return _operador_autorizado(request)
+
+    def has_change_permission(self, request, obj=None):
+        return _operador_autorizado(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return _operador_autorizado(request)
+
+
 class PlatformAdminSite(AdminSite):
     site_header = 'GabTech — Administração da plataforma'
     site_title = 'GabTech Plataforma'
     index_title = 'Gabinetes e cadastros'
+    index_template = 'plataforma/admin/index.html'
 
     def has_permission(self, request):
         return operador_logado(request) is not None
+
+    def log_addition(self, request, object, message):
+        return
+
+    def log_change(self, request, object, message):
+        return
+
+    def log_deletion(self, request, object, object_repr, message):
+        return
 
     def get_urls(self):
         urls = super().get_urls()
@@ -72,18 +105,25 @@ class PlatformAdminSite(AdminSite):
         request.session.flush()
         return HttpResponseRedirect(reverse('platform_admin:login'))
 
+    def each_context(self, request):
+        context = super().each_context(request)
+        op = operador_logado(request)
+        if op is not None:
+            context['platform_operador'] = op
+        return context
+
 
 platform_admin_site = PlatformAdminSite(name='platform_admin')
 
 
-class DominioInline(admin.TabularInline):
+class DominioInline(PlatformOperadorPermissionMixin, admin.TabularInline):
     model = Dominio
     extra = 0
     fields = ('domain', 'is_primary')
 
 
 @admin.register(Gabinete, site=platform_admin_site)
-class GabineteAdmin(admin.ModelAdmin):
+class GabineteAdmin(PlatformOperadorPermissionMixin, admin.ModelAdmin):
     list_display = ('nome', 'schema_name', 'created_on')
     search_fields = ('nome', 'schema_name')
     inlines = (DominioInline,)
@@ -95,7 +135,7 @@ class GabineteAdmin(admin.ModelAdmin):
 
 
 @admin.register(Dominio, site=platform_admin_site)
-class DominioAdmin(admin.ModelAdmin):
+class DominioAdmin(PlatformOperadorPermissionMixin, admin.ModelAdmin):
     list_display = ('domain', 'tenant', 'is_primary')
     list_filter = ('is_primary',)
     search_fields = ('domain', 'tenant__schema_name', 'tenant__nome')
@@ -103,7 +143,7 @@ class DominioAdmin(admin.ModelAdmin):
 
 
 @admin.register(CadastroGabinete, site=platform_admin_site)
-class CadastroGabineteAdmin(admin.ModelAdmin):
+class CadastroGabineteAdmin(PlatformOperadorPermissionMixin, admin.ModelAdmin):
     list_display = (
         'nome_gabinete',
         'slug',
@@ -157,7 +197,7 @@ class OperadorPlataformaForm(forms.ModelForm):
 
 
 @admin.register(OperadorPlataforma, site=platform_admin_site)
-class OperadorPlataformaAdmin(admin.ModelAdmin):
+class OperadorPlataformaAdmin(PlatformOperadorPermissionMixin, admin.ModelAdmin):
     form = OperadorPlataformaForm
     list_display = ('email', 'nome', 'is_active', 'created_at')
     search_fields = ('email', 'nome')

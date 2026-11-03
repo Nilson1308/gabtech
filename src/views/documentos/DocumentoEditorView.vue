@@ -49,7 +49,7 @@ const route = useRoute()
 const documentosStore = useDocumentosStore()
 const templatesStore = useTemplatesStore()
 const authStore = useAuthStore()
-const { showSuccess, showError, showWarning, showInfo, showConfirm } = useAlertDialog()
+const { showSuccess, showError, showWarning, showConfirm } = useAlertDialog()
 
 // State
 const documento = ref<Documento | null>(null)

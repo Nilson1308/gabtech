@@ -1,0 +1,2 @@
+# Instalar: visudo -cf /var/www/gabtech/deploy/sudoers-gabtech-certbot && cp ... /etc/sudoers.d/gabtech-certbot
+www-data ALL=(root) NOPASSWD: /var/www/gabtech/deploy/certbot-expand-domain.sh *

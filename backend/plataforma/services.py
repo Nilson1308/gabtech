@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
+import subprocess
 import threading
 import uuid
+from pathlib import Path
 
+from django.conf import settings
 from django.db import close_old_connections
 from django.utils import timezone
 from django_tenants.utils import get_public_schema_name, schema_context
@@ -51,6 +54,7 @@ def executar_provisionamento(cadastro_id: uuid.UUID | str, senha_admin: str) -> 
                     'updated_at',
                 ],
             )
+            _tentar_expandir_ssl(domain)
         except Exception as exc:
             logger.exception('Falha ao provisionar cadastro %s', cadastro_id)
             cadastro.status = CadastroGabinete.Status.FALHOU
@@ -60,7 +64,32 @@ def executar_provisionamento(cadastro_id: uuid.UUID | str, senha_admin: str) -> 
             close_old_connections()
 
 
+def _tentar_expandir_ssl(domain: str) -> None:
+    if not getattr(settings, 'GABTECH_SSL_EXPAND_ON_PROVISION', False):
+        return
+    script = Path('/var/www/gabtech/deploy/certbot-expand-domain.sh')
+    if not script.is_file():
+        logger.warning('SSL auto-expand: script ausente (%s)', script)
+        return
+    try:
+        subprocess.run(
+            ['sudo', str(script), domain],
+            check=False,
+            timeout=300,
+            capture_output=True,
+            text=True,
+        )
+    except OSError as exc:
+        logger.warning('SSL auto-expand falhou para %s: %s', domain, exc)
+
+
 def enfileirar_provisionamento(cadastro: CadastroGabinete, senha_admin: str) -> None:
+    if getattr(settings, 'GABTECH_USE_CELERY_PROVISION', False):
+        from plataforma.tasks import provisionar_cadastro_task
+
+        provisionar_cadastro_task.delay(str(cadastro.pk), senha_admin)
+        return
+
     thread = threading.Thread(
         target=executar_provisionamento,
         args=(cadastro.pk, senha_admin),

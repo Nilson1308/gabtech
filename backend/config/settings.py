@@ -27,6 +27,13 @@ SECRET_KEY = os.environ.get(
 
 DEBUG = _env_bool('DJANGO_DEBUG', default=True)
 
+if not DEBUG:
+    _weak = SECRET_KEY.startswith('dev-only') or SECRET_KEY.startswith('troque-')
+    if _weak or len(SECRET_KEY) < 40:
+        raise ValueError(
+            'DJANGO_SECRET_KEY fraca ou placeholder com DJANGO_DEBUG=false.',
+        )
+
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
@@ -47,7 +54,7 @@ SHARED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'django.contrib.admin',
+    # admin só em TENANT_APPS — public usa platform_admin (OperadorPlataforma)
     'rest_framework',
     'rest_framework_simplejwt',
 ]
@@ -204,6 +211,27 @@ GABTECH_TENANT_URL_SCHEME = os.environ.get('GABTECH_TENANT_URL_SCHEME', 'http')
 GABTECH_TENANT_API_PORT = os.environ.get('GABTECH_TENANT_API_PORT', '8800')
 GABTECH_TENANT_APP_PORT = os.environ.get('GABTECH_TENANT_APP_PORT', '5174')
 
+_redis_url = os.environ.get('REDIS_URL', '').strip()
+if _redis_url:
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': _redis_url,
+        },
+    }
+
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', _redis_url or 'redis://127.0.0.1:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', CELERY_BROKER_URL)
+CELERY_TASK_ALWAYS_EAGER = _env_bool('CELERY_TASK_ALWAYS_EAGER', default=not bool(_redis_url))
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+GABTECH_USE_CELERY_PROVISION = _env_bool(
+    'GABTECH_USE_CELERY_PROVISION',
+    default=bool(_redis_url),
+)
+GABTECH_SSL_EXPAND_ON_PROVISION = _env_bool('GABTECH_SSL_EXPAND_ON_PROVISION', default=True)
+
 GABTECH_SLUGS_RESERVADOS = frozenset(
     s.strip().lower()
     for s in os.environ.get(
@@ -212,6 +240,21 @@ GABTECH_SLUGS_RESERVADOS = frozenset(
     ).split(',')
     if s.strip()
 )
+
+# Reverse proxy (nginx) — necessário para cookies/redirects corretos com TLS
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+USE_X_FORWARDED_HOST = True
+
+if not DEBUG:
+    SECURE_SSL_REDIRECT = _env_bool('DJANGO_SECURE_SSL_REDIRECT', default=True)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    _hsts = int(os.environ.get('SECURE_HSTS_SECONDS', '31536000'))
+    if _hsts > 0:
+        SECURE_HSTS_SECONDS = _hsts
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 TEMPLATES = [
     {

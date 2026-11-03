@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useServicosStore } from '@/stores/servicos'
 import { useAuthStore } from '@/stores/auth'
-import { hasGerenciamentoServicos, PERMS } from '@/constants/rbac'
+import { hasGerenciamentoServicos } from '@/constants/rbac'
 import {
   ArrowRight,
   Briefcase,

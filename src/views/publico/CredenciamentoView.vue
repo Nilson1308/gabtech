@@ -143,7 +143,7 @@ async function handleSubmit() {
         <div class="bg-blue-50 dark:bg-blue-900/20 rounded-xl p-6 space-y-3">
           <div class="flex items-center gap-3 text-gray-700 dark:text-gray-300">
             <Calendar class="w-5 h-5 text-blue-600 dark:text-blue-400" />
-            <span class="font-medium">{{ evento ? formatarData(evento.data) : '' }}</span>
+            <span class="font-medium">{{ evento?.data ? formatarData(evento.data) : '' }}</span>
           </div>
           <div class="flex items-center gap-3 text-gray-700 dark:text-gray-300">
             <Clock class="w-5 h-5 text-blue-600 dark:text-blue-400" />
@@ -167,7 +167,7 @@ async function handleSubmit() {
             <div class="space-y-2 text-blue-50">
               <div class="flex items-center gap-2">
                 <Calendar class="w-4 h-4" />
-                <span class="text-sm">{{ formatarData(evento.data) }}</span>
+                <span class="text-sm">{{ evento.data ? formatarData(evento.data) : '' }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <Clock class="w-4 h-4" />

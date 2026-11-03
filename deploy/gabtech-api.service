@@ -1,0 +1,20 @@
+[Unit]
+Description=GabTech Django API (Gunicorn)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/gabtech/backend
+EnvironmentFile=/var/www/gabtech/backend/.env
+ExecStart=/var/www/gabtech/backend/.venv/bin/gunicorn --config gunicorn.conf.py
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

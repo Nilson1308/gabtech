@@ -548,7 +548,7 @@ export const useAtendimentosStore = defineStore('atendimentos', () => {
   async function fetchAtendimentos() {
     loading.value = true
     try {
-      await Promise.all([ensureMacrotemas(), fetchTagsAtendimento()])
+      await Promise.all([ensureMacrotemas(), ensureTagsAtendimento()])
       atendimentos.value = await loadAllAtendimentos()
     } finally {
       loading.value = false

@@ -719,7 +719,10 @@ export const useCerimonialStore = defineStore('cerimonial', () => {
   }
 
   async function criarEvento(
-    dados: Omit<Evento, 'id' | 'createdAt' | 'checklist' | 'convidados' | 'credenciados' | 'comunicacoes'>,
+    dados: Omit<
+      Evento,
+      'id' | 'createdAt' | 'checklist' | 'convidados' | 'credenciados' | 'comunicacoes' | 'credenciamentoConfig'
+    >,
   ) {
     const { useAgendaStore } = await import('./agenda')
     const agendaStore = useAgendaStore()
