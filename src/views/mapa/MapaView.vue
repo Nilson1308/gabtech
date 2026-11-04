@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, nextTick } from 'vue'
-import { useAnalyticsStore, type TerritorialAgrupamento } from '@/stores/analytics'
+import { useAnalyticsStore, type TerritorialAgrupamento, type MapBbox } from '@/stores/analytics'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { Layers, MapPin, Flame, X } from 'lucide-vue-next'
@@ -56,23 +56,80 @@ const demandasLegendaTitulo = computed(() =>
 const demandasLegendaRotulo = (zona: { nome: string; macrotema: string }) =>
   analyticsStore.territorialAgrupamento === 'macrotema_bairro' ? zona.nome : zona.macrotema
 
-async function recarregarTerritorial() {
-  await analyticsStore.carregarTerritorial({
-    agrupamento: agrupamentoDemandas.value,
-    macrotemaId: filtroMacrotemaId.value ? Number(filtroMacrotemaId.value) : null,
-    bairro: filtroBairro.value || null,
+const queryTerritorial = () => ({
+  agrupamento: agrupamentoDemandas.value as TerritorialAgrupamento,
+  macrotemaId: filtroMacrotemaId.value ? Number(filtroMacrotemaId.value) : null,
+  bairro: filtroBairro.value || null,
+})
+
+const pinsResumoTexto = computed(() => {
+  const visiveis = analyticsStore.pinsCidadaos.length
+  const total =
+    analyticsStore.territorialTotais?.cidadaosGeolocalizados ??
+    analyticsStore.pinsMeta?.totalGeolocalizados ??
+    visiveis
+  if (!camadasAtivas.value.cidadaos) {
+    return `${total} cidadãos geolocalizados (camada desligada)`
+  }
+  if (analyticsStore.pinsMeta?.limitAplicado) {
+    return `${visiveis} pins na área visível (limite; ${total} no filtro)`
+  }
+  if (visiveis < total) {
+    return `${visiveis} na área visível · ${total} no filtro`
+  }
+  return `${visiveis} cidadãos mapeados`
+})
+
+let debounceMapaFiltros: ReturnType<typeof setTimeout> | null = null
+let debouncePinsViewport: ReturnType<typeof setTimeout> | null = null
+
+function bboxDoMapa(): MapBbox | null {
+  if (!mapa) return null
+  const b = mapa.getBounds()
+  return {
+    swLat: b.getSouth(),
+    swLng: b.getWest(),
+    neLat: b.getNorth(),
+    neLng: b.getEast(),
+  }
+}
+
+async function carregarPinsNaViewport() {
+  if (!camadasAtivas.value.cidadaos) {
+    return
+  }
+  const bbox = bboxDoMapa()
+  if (!bbox) return
+  await analyticsStore.carregarTerritorialPins({
+    ...queryTerritorial(),
+    bbox,
   })
+}
+
+async function recarregarMapaBase() {
+  await analyticsStore.carregarMapaBase(queryTerritorial())
+  await carregarPinsNaViewport()
   if (mapa) atualizarCamadas()
+}
+
+function agendarPinsViewport() {
+  if (debouncePinsViewport) clearTimeout(debouncePinsViewport)
+  debouncePinsViewport = setTimeout(async () => {
+    await carregarPinsNaViewport()
+    atualizarCamadas()
+  }, 350)
 }
 
 // Carregar dados
 onMounted(async () => {
-  await recarregarTerritorial()
+  await analyticsStore.carregarMapaBase(queryTerritorial())
 
   await nextTick()
 
   if (mapaContainer.value) {
     inicializarMapa()
+    await carregarPinsNaViewport()
+    atualizarCamadas()
   }
 })
 
@@ -93,6 +150,12 @@ function inicializarMapa() {
   // Criar layers group para markers e heat
   markersLayer.value = L.layerGroup().addTo(mapa)
   heatLayer.value = L.layerGroup().addTo(mapa)
+
+  mapa.on('moveend', () => {
+    if (camadasAtivas.value.cidadaos) {
+      agendarPinsViewport()
+    }
+  })
 
   // Renderizar camadas iniciais
   atualizarCamadas()
@@ -176,21 +239,34 @@ function atualizarCamadas() {
 }
 
 // Observar mudanças nas camadas ativas
-watch(camadasAtivas, () => {
+watch(camadasAtivas, async () => {
+  if (camadasAtivas.value.cidadaos && mapa) {
+    await carregarPinsNaViewport()
+  }
   atualizarCamadas()
 }, { deep: true })
 
 watch(
-  () => [analyticsStore.pinsCidadaos.length, analyticsStore.zonasCalor.length, analyticsStore.loading] as const,
-  ([pins, zonas, loading]) => {
-    if (!loading && mapa && (pins > 0 || zonas >= 0)) {
+  () =>
+    [
+      analyticsStore.pinsCidadaos.length,
+      analyticsStore.zonasCalor.length,
+      analyticsStore.loading,
+      analyticsStore.loadingPins,
+      analyticsStore.loadingZonas,
+    ] as const,
+  ([, , loading, loadingPins, loadingZonas]) => {
+    if (!loading && !loadingPins && !loadingZonas && mapa) {
       atualizarCamadas()
     }
-  }
+  },
 )
 
 watch([agrupamentoDemandas, filtroMacrotemaId, filtroBairro], () => {
-  recarregarTerritorial()
+  if (debounceMapaFiltros) clearTimeout(debounceMapaFiltros)
+  debounceMapaFiltros = setTimeout(() => {
+    recarregarMapaBase()
+  }, 300)
 })
 
 function toggleCamada(camada: 'cidadaos' | 'demandas') {
@@ -291,7 +367,10 @@ function toggleCamada(camada: 'cidadaos' | 'demandas') {
               </select>
             </label>
 
-            <p v-if="analyticsStore.loading" class="text-xs text-primary-600 dark:text-primary-400">
+            <p
+              v-if="analyticsStore.loading || analyticsStore.loadingZonas || analyticsStore.loadingPins"
+              class="text-xs text-primary-600 dark:text-primary-400"
+            >
               Atualizando mapa…
             </p>
           </div>
@@ -333,7 +412,7 @@ function toggleCamada(camada: 'cidadaos' | 'demandas') {
                 <h4 class="font-semibold text-gray-900 dark:text-slate-100">Base de Cidadãos</h4>
               </div>
               <p class="text-sm text-gray-600 dark:text-slate-400 mt-1">
-                {{ analyticsStore.pinsCidadaos.length }} cidadãos mapeados
+                {{ pinsResumoTexto }}
               </p>
               <p class="text-xs text-gray-500 dark:text-slate-500 mt-1">
                 Pins azuis representam cidadãos cadastrados no CRM

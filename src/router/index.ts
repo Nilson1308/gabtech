@@ -59,6 +59,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'desempenho-equipe',
+        name: 'DesempenhoEquipe',
+        component: () => import('@/views/DesempenhoEquipeView.vue'),
+        meta: {
+          permissionAny: [PERMS.dashboardOperacional, PERMS.dashboard],
+          headerTitle: 'Desempenho da Equipe',
+        },
+      },
+      {
         path: 'crm',
         name: 'CRM',
         component: () => import('@/views/crm/CrmListView.vue'),

@@ -19,6 +19,7 @@ import {
   Info,
   MapPin,
   Briefcase,
+  UserCheck,
 } from 'lucide-vue-next'
 
 interface Props {
@@ -41,6 +42,12 @@ const menuItems = [
     nome: 'Dashboard',
     rota: '/dashboard',
     icone: LayoutDashboard,
+    permissionAny: [PERMS.dashboardOperacional, PERMS.dashboard],
+  },
+  {
+    nome: 'Desempenho da Equipe',
+    rota: '/desempenho-equipe',
+    icone: UserCheck,
     permissionAny: [PERMS.dashboardOperacional, PERMS.dashboard],
   },
   {

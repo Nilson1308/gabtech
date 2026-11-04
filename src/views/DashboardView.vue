@@ -9,7 +9,10 @@ import MacrotemaChart from '@/components/dashboard/MacrotemaChart.vue'
 import QuickActions from '@/components/dashboard/QuickActions.vue'
 import RecentAtendimentos from '@/components/dashboard/RecentAtendimentos.vue'
 import { PERMS } from '@/constants/rbac'
-import { Sparkles, Inbox, AlertCircle, Users, TrendingUp, Activity, AlertTriangle, CheckCircle, Clock, ArrowRight, UserPlus, Calendar, FileCheck } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
+import { Sparkles, Inbox, AlertCircle, Users, TrendingUp, Activity, AlertTriangle, CheckCircle, Clock, ArrowRight, UserPlus, Calendar, FileCheck, UserCheck } from 'lucide-vue-next'
+
+const router = useRouter()
 
 const authStore = useAuthStore()
 const atendimentosStore = useAtendimentosStore()
@@ -79,6 +82,10 @@ function getIconeAtividade(tipo: string) {
     status_alterado: CheckCircle
   }
   return icones[tipo] || Activity
+}
+
+function abrirDesempenhoAssessor(userId: string) {
+  router.push({ path: '/desempenho-equipe', query: { assessor: userId } })
 }
 
 function formatarTempoRelativo(timestamp: string): string {
@@ -316,16 +323,23 @@ function formatarTempoRelativo(timestamp: string): string {
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <!-- Ranking de Produtividade -->
         <div class="lg:col-span-2 card">
-          <div class="mb-4 flex items-center justify-between">
+          <div class="mb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
               <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
                 <TrendingUp class="w-5 h-5 text-primary-600 dark:text-primary-400" />
                 Ranking de Produtividade
               </h3>
               <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Performance da equipe por taxa de conclusão
+                Performance da equipe por taxa de conclusão — clique na linha para análise individual
               </p>
             </div>
+            <router-link
+              to="/desempenho-equipe"
+              class="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-primary-200 dark:border-primary-800 text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/20 hover:bg-primary-100 dark:hover:bg-primary-900/30 transition-colors whitespace-nowrap"
+            >
+              <UserCheck class="w-4 h-4" />
+              Relatório por assessor
+            </router-link>
           </div>
 
           <div class="overflow-x-auto">
@@ -344,7 +358,8 @@ function formatarTempoRelativo(timestamp: string): string {
                 <tr
                   v-for="(assessor, index) in analyticsStore.topPerformers"
                   :key="assessor.userId"
-                  class="border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors"
+                  class="border-b border-gray-100 dark:border-slate-800 hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                  @click="abrirDesempenhoAssessor(assessor.userId)"
                 >
                   <td class="py-3 px-4">
                     <div

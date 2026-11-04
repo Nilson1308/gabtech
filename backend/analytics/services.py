@@ -22,6 +22,9 @@ User = get_user_model()
 
 MOGI_CENTRO = {'lat': -23.5227, 'lng': -46.1879, 'zoom': 12}
 
+PINS_LIMIT_PADRAO = 500
+PINS_LIMIT_MAX = 1500
+
 AGRUPAMENTO_MACROTEMA = 'macrotema'
 AGRUPAMENTO_MACROTEMA_BAIRRO = 'macrotema_bairro'
 AGRUPAMENTOS_VALIDOS = frozenset({AGRUPAMENTO_MACROTEMA, AGRUPAMENTO_MACROTEMA_BAIRRO})
@@ -269,6 +272,143 @@ def _aplicar_filtros_territorial(
     return queryset
 
 
+def _contexto_territorial(
+    user,
+    *,
+    macrotema_id: int | None,
+    bairro: str | None,
+):
+    qs = _atendimentos_visiveis(user)
+    pendentes_base = qs.exclude(status=Atendimento.Status.CONCLUIDO)
+    pendentes = _aplicar_filtros_territorial(
+        pendentes_base,
+        macrotema_id=macrotema_id,
+        bairro=bairro,
+    )
+    qs_pins = _aplicar_filtros_territorial(
+        qs,
+        macrotema_id=macrotema_id,
+        bairro=bairro,
+    )
+    return pendentes_base, pendentes, qs_pins
+
+
+def _queryset_pins_cidadaos(qs_pins, *, bbox: dict[str, float] | None = None):
+    pins_qs = (
+        Cidadao.objects.filter(
+            pk__in=qs_pins.values('cidadao_id'),
+            endereco__latitude__isnull=False,
+            endereco__longitude__isnull=False,
+        )
+        .select_related('endereco')
+        .prefetch_related('marcadores')
+        .distinct()
+    )
+    if bbox:
+        pins_qs = pins_qs.filter(
+            endereco__latitude__gte=bbox['sw_lat'],
+            endereco__latitude__lte=bbox['ne_lat'],
+            endereco__longitude__gte=bbox['sw_lng'],
+            endereco__longitude__lte=bbox['ne_lng'],
+        )
+    return pins_qs
+
+
+def _serializar_pins(cidadaos_qs, *, limit: int) -> tuple[list[dict[str, Any]], int, bool]:
+    total = cidadaos_qs.count()
+    limite_efetivo = min(max(limit, 1), PINS_LIMIT_MAX)
+    truncado = total > limite_efetivo
+    pins = []
+    for c in cidadaos_qs[:limite_efetivo]:
+        end = c.endereco
+        pins.append(
+            {
+                'id': str(c.pk),
+                'nome': c.nome,
+                'lat': float(end.latitude),
+                'lng': float(end.longitude),
+                'endereco': _format_endereco(end),
+                'tags': list(c.marcadores.values_list('nome', flat=True)),
+            }
+        )
+    return pins, total, truncado
+
+
+def build_territorial_filtros(
+    user,
+    *,
+    macrotema_id: int | None = None,
+    bairro: str | None = None,
+) -> dict[str, Any]:
+    pendentes_base, _, qs_pins = _contexto_territorial(
+        user,
+        macrotema_id=macrotema_id,
+        bairro=bairro,
+    )
+    total_pins = _queryset_pins_cidadaos(qs_pins).count()
+    return {
+        'centro': MOGI_CENTRO,
+        'filtros_disponiveis': _filtros_disponiveis(pendentes_base),
+        'totais': {
+            'cidadaos_geolocalizados': total_pins,
+            'atendimentos_pendentes': pendentes_base.count(),
+        },
+    }
+
+
+def build_territorial_zonas(
+    user,
+    *,
+    agrupamento: str = AGRUPAMENTO_MACROTEMA,
+    macrotema_id: int | None = None,
+    bairro: str | None = None,
+) -> dict[str, Any]:
+    if agrupamento not in AGRUPAMENTOS_VALIDOS:
+        agrupamento = AGRUPAMENTO_MACROTEMA
+    _, pendentes, _ = _contexto_territorial(
+        user,
+        macrotema_id=macrotema_id,
+        bairro=bairro,
+    )
+    return {
+        'zonas_calor': _montar_zonas(pendentes, agrupamento),
+        'meta': {
+            'agrupamento': agrupamento,
+            'macrotema_id': macrotema_id,
+            'bairro': bairro or '',
+        },
+    }
+
+
+def build_territorial_pins(
+    user,
+    *,
+    macrotema_id: int | None = None,
+    bairro: str | None = None,
+    bbox: dict[str, float] | None = None,
+    limit: int = PINS_LIMIT_PADRAO,
+) -> dict[str, Any]:
+    _, _, qs_pins = _contexto_territorial(
+        user,
+        macrotema_id=macrotema_id,
+        bairro=bairro,
+    )
+    pins_qs = _queryset_pins_cidadaos(qs_pins, bbox=bbox)
+    pins, total, truncado = _serializar_pins(pins_qs, limit=limit)
+    return {
+        'pins_cidadaos': pins,
+        'meta': {
+            'total_geolocalizados': total,
+            'retornados': len(pins),
+            'limit': min(max(limit, 1), PINS_LIMIT_MAX),
+            'limit_aplicado': truncado,
+            'bbox': bbox,
+            'macrotema_id': macrotema_id,
+            'bairro': bairro or '',
+        },
+    }
+
+
 def _filtros_disponiveis(pendentes) -> dict[str, Any]:
     macro_ids = pendentes.values_list('macrotema_id', flat=True).distinct()
     macrotemas = [
@@ -410,57 +550,35 @@ def build_territorial(
     macrotema_id: int | None = None,
     bairro: str | None = None,
 ) -> dict[str, Any]:
+    """Payload completo (legado). Preferir endpoints /filtros/, /zonas/ e /pins/."""
     if agrupamento not in AGRUPAMENTOS_VALIDOS:
         agrupamento = AGRUPAMENTO_MACROTEMA
 
-    qs = _atendimentos_visiveis(user)
-    pendentes_base = qs.exclude(status=Atendimento.Status.CONCLUIDO)
-    filtros_disp = _filtros_disponiveis(pendentes_base)
-
-    pendentes = _aplicar_filtros_territorial(
-        pendentes_base,
+    filtros = build_territorial_filtros(user, macrotema_id=macrotema_id, bairro=bairro)
+    zonas = build_territorial_zonas(
+        user,
+        agrupamento=agrupamento,
         macrotema_id=macrotema_id,
         bairro=bairro,
     )
-    qs_pins = _aplicar_filtros_territorial(
-        qs,
+    pins = build_territorial_pins(
+        user,
         macrotema_id=macrotema_id,
         bairro=bairro,
+        bbox=None,
+        limit=PINS_LIMIT_MAX,
     )
-
-    cidadao_ids = qs_pins.values_list('cidadao_id', flat=True).distinct()
-    pins_qs = (
-        Cidadao.objects.filter(pk__in=cidadao_ids, endereco__latitude__isnull=False)
-        .select_related('endereco')
-        .prefetch_related('marcadores')
-    )
-
-    pins = []
-    for c in pins_qs:
-        end = c.endereco
-        pins.append(
-            {
-                'id': str(c.pk),
-                'nome': c.nome,
-                'lat': float(end.latitude),
-                'lng': float(end.longitude),
-                'endereco': _format_endereco(end),
-                'tags': list(c.marcadores.values_list('nome', flat=True)),
-            }
-        )
-
-    zonas = _montar_zonas(pendentes, agrupamento)
 
     return {
-        'pins_cidadaos': pins,
-        'zonas_calor': zonas,
-        'centro': MOGI_CENTRO,
+        'pins_cidadaos': pins['pins_cidadaos'],
+        'zonas_calor': zonas['zonas_calor'],
+        'centro': filtros['centro'],
         'meta': {
-            'agrupamento': agrupamento,
-            'macrotema_id': macrotema_id,
-            'bairro': bairro or '',
+            **zonas['meta'],
+            'pins_meta': pins['meta'],
         },
-        'filtros_disponiveis': filtros_disp,
+        'filtros_disponiveis': filtros['filtros_disponiveis'],
+        'totais': filtros['totais'],
     }
 
 
