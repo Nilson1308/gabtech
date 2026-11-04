@@ -68,6 +68,11 @@ class MigracaoConfig:
         return dict(self.raw['usuarios_legado'].get('mapa', {}))
 
     @property
+    def usuarios_provisionamento(self) -> dict[str, Any]:
+        raw = self.raw.get('usuarios_legado', {}).get('provisionamento', {})
+        return raw if isinstance(raw, dict) else {}
+
+    @property
     def macrotema_default(self) -> str:
         return str(self.raw['macrotemas']['default'])
 

@@ -29,8 +29,45 @@ const authStore = useAuthStore()
 // Estado
 const mostrarModalEvento = ref(false)
 const eventoEditando = ref<Evento | null>(null)
-const mostrarFiltros = ref(true)
+const isMobile = ref(typeof window !== 'undefined' ? window.innerWidth < 1024 : false)
+const mostrarFiltros = ref(!isMobile.value)
 const isDarkMode = ref(false)
+const carregandoPeriodo = ref(false)
+
+function pad2(n: number) {
+  return String(n).padStart(2, '0')
+}
+
+function toIsoDate(d: Date) {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+function expandirIntervalo(start: Date, end: Date) {
+  const dataDe = new Date(start)
+  dataDe.setMonth(dataDe.getMonth() - 1)
+  const dataAte = new Date(end)
+  dataAte.setMonth(dataAte.getMonth() + 1)
+  return { dataDe: toIsoDate(dataDe), dataAte: toIsoDate(dataAte) }
+}
+
+let debouncePeriodo: ReturnType<typeof setTimeout> | null = null
+async function carregarPeriodoVisivel(start: Date, end: Date) {
+  if (debouncePeriodo) clearTimeout(debouncePeriodo)
+  debouncePeriodo = setTimeout(async () => {
+    const { dataDe, dataAte } = expandirIntervalo(start, end)
+    carregandoPeriodo.value = true
+    try {
+      await agendaStore.fetchEventosParaPeriodo(dataDe, dataAte)
+      sincronizarEventosCalendario()
+    } finally {
+      carregandoPeriodo.value = false
+    }
+  }, 180)
+}
+
+const handleDatesSet = (arg: { start: Date; end: Date }) => {
+  carregarPeriodoVisivel(arg.start, arg.end)
+}
 
 // Filtros (usando ref para garantir reatividade)
 const filtrosTipos = ref<string[]>([])
@@ -140,7 +177,8 @@ const handleDateSelect = (selectInfo: DateSelectArg) => {
 // FullCalendar Options (eventos sincronizados via watch — resetOptions nem sempre reflete filtros)
 const calendarOptions: CalendarOptions = {
   plugins: [dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin],
-  initialView: 'dayGridMonth',
+  initialView: typeof window !== 'undefined' && window.innerWidth < 768 ? 'listWeek' : 'dayGridMonth',
+  datesSet: handleDatesSet,
   locale: ptBrLocale,
   headerToolbar: {
     left: 'prev,next today',
@@ -221,11 +259,22 @@ watch([tiposAtivosIds, espacosAtivosIds], () => {
 
 // Carregar dados
 onMounted(async () => {
-  await agendaStore.initialize()
+  await agendaStore.initializeCatalogo()
 
   inicializarFiltros()
   await nextTick()
-  sincronizarEventosCalendario()
+  const api = fullCalendarRef.value?.getApi()
+  if (api) {
+    const { activeStart, activeEnd } = api.view
+    const { dataDe, dataAte } = expandirIntervalo(activeStart, activeEnd)
+    carregandoPeriodo.value = true
+    try {
+      await agendaStore.fetchEventosParaPeriodo(dataDe, dataAte)
+      sincronizarEventosCalendario()
+    } finally {
+      carregandoPeriodo.value = false
+    }
+  }
   
   // Detectar dark mode inicial
   isDarkMode.value = document.documentElement.classList.contains('dark')
@@ -257,11 +306,17 @@ const abrirEdicaoEvento = (evento: Evento) => {
 </script>
 
 <template>
-  <div class="flex gap-6 h-full">
+  <div class="flex flex-col lg:flex-row gap-4 lg:gap-6 h-full min-h-0">
+    <div
+      v-if="mostrarFiltros && isMobile"
+      class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+      @click="mostrarFiltros = false"
+    />
+
     <!-- Sidebar de Filtros -->
     <aside
       v-if="mostrarFiltros"
-      class="w-64 flex-shrink-0 space-y-6"
+      class="fixed lg:relative inset-y-0 left-0 z-50 lg:z-auto w-[min(100%,18rem)] lg:w-64 flex-shrink-0 space-y-4 lg:space-y-6 p-4 lg:p-0 bg-gray-50 dark:bg-slate-900 lg:bg-transparent overflow-y-auto shadow-xl lg:shadow-none"
     >
       <!-- Resumo / Big Number -->
       <div class="card bg-gradient-to-br from-primary-500 to-primary-600 dark:from-primary-600 dark:to-primary-700 border-0 text-white">
@@ -269,7 +324,7 @@ const abrirEdicaoEvento = (evento: Evento) => {
           <h3 class="text-sm font-medium opacity-90">Eventos Filtrados</h3>
           <button
             @click="mostrarFiltros = false"
-            class="lg:hidden text-white/80 hover:text-white"
+            class="text-white/80 hover:text-white lg:hidden"
           >
             <X class="w-4 h-4" />
           </button>
@@ -373,7 +428,16 @@ const abrirEdicaoEvento = (evento: Evento) => {
       </div>
 
       <!-- FullCalendar -->
-      <div class="card p-6" :class="{ 'calendar-dark': isDarkMode }">
+      <div
+        class="card p-3 sm:p-6 relative agenda-calendar-wrap min-w-0 overflow-x-auto"
+        :class="{ 'calendar-dark': isDarkMode, 'calendar-light': !isDarkMode }"
+      >
+        <div
+          v-if="carregandoPeriodo || agendaStore.loading"
+          class="absolute inset-0 z-10 flex items-center justify-center bg-white/70 dark:bg-slate-900/70 rounded-lg"
+        >
+          <span class="text-sm font-medium text-gray-600 dark:text-slate-300">Carregando eventos…</span>
+        </div>
         <FullCalendar ref="fullCalendarRef" :options="calendarOptions as any" />
       </div>
 
@@ -441,18 +505,18 @@ const abrirEdicaoEvento = (evento: Evento) => {
   --fc-today-bg-color: rgba(59, 130, 246, 0.1);
 }
 
-/* Container */
-.fc {
+/* Container — light mode scoped (dark usa .calendar-dark abaixo) */
+.agenda-calendar-wrap.calendar-light .fc {
   font-family: inherit !important;
   background: white !important;
 }
 
-.fc * {
+.agenda-calendar-wrap.calendar-light .fc * {
   border-color: #e2e8f0 !important;
 }
 
 /* Header Toolbar */
-.fc .fc-toolbar {
+.agenda-calendar-wrap.calendar-light .fc .fc-toolbar {
   padding: 1rem;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 0.75rem 0.75rem 0 0;
@@ -829,12 +893,24 @@ const abrirEdicaoEvento = (evento: Evento) => {
   border-color: #cbd5e1 !important;
 }
 
-.calendar-dark .fc .fc-list-event-title {
+.calendar-dark .fc .fc-list-event-title,
+.calendar-dark .fc .fc-list-event-title a {
   color: #f1f5f9 !important;
 }
 
 .calendar-dark .fc .fc-list-event-time {
   color: #94a3b8 !important;
+}
+
+.calendar-dark .fc .fc-list-day-text,
+.calendar-dark .fc .fc-list-day-side-text {
+  color: #cbd5e1 !important;
+}
+
+/* Evita vazamento do tema claro na lista */
+.agenda-calendar-wrap.calendar-dark .fc .fc-list-event-title,
+.agenda-calendar-wrap.calendar-dark .fc .fc-list-day-cushion {
+  color: #f1f5f9 !important;
 }
 
 .calendar-dark .fc .fc-list-empty {

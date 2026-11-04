@@ -63,8 +63,9 @@ const coresDisponiveis = [
 
 onMounted(async () => {
   await Promise.all([
-    documentosStore.initialize(),
-    tiposStore.initialize()
+    documentosStore.initializeCatalogo(),
+    documentosStore.fetchResumo(),
+    tiposStore.initialize(),
   ])
 })
 
@@ -87,7 +88,7 @@ const etiquetasOrdenadas = computed(() =>
 )
 
 function contarDocumentosPorPasta(pastaId: string) {
-  return documentosStore.documentos.filter(d => d.pastaId === pastaId).length
+  return documentosStore.contarDocumentosNaPasta(pastaId)
 }
 
 // Funções Pasta

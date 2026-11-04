@@ -59,10 +59,10 @@ const artigos: Artigo[] = [
     icone: LayoutDashboard,
     conteudo: [
       '<strong>Visão operacional</strong>',
-      'Indicadores de atendimentos, produtividade, macrotemas e alertas conforme seu nível de acesso.',
+      'Indicadores de atendimentos abertos, SLA, macrotemas e últimos protocolos — carregados por resumo rápido (sem baixar todos os atendimentos).',
       '',
       '<strong>Inteligência territorial</strong>',
-      'Gráficos e recortes ajudam a priorizar demandas por região ou tema (quando habilitado no perfil).',
+      'Mapa com pins de cidadãos geocodificados e zonas de demanda por macrotema (e opcionalmente bairro). Use o painel de camadas no mobile na parte inferior da tela.',
     ],
   },
   {
@@ -131,7 +131,10 @@ const artigos: Artigo[] = [
     icone: Calendar,
     conteudo: [
       '<strong>Calendário</strong>',
-      'Visualizações mês, semana e dia (FullCalendar). Compromissos oficiais do gabinete.',
+      'Visualizações mês, semana, dia e lista. Eventos são carregados sob demanda conforme o período visível (mais rápido em bases grandes). No celular, use a lista e o botão de filtros.',
+      '',
+      '<strong>Tema escuro</strong>',
+      'O calendário acompanha o tema do sistema; textos e grades foram ajustados para contraste no modo escuro.',
       '',
       '<strong>Espaços e tipos</strong>',
       'Cadastre salas/auditórios e categorias de evento em Configurações → Agenda & Cerimonial.',
@@ -167,7 +170,10 @@ const artigos: Artigo[] = [
     icone: FileText,
     conteudo: [
       '<strong>Organização</strong>',
-      'Pastas, tipos de documento e templates oficiais.',
+      'Pastas, tipos de documento, templates e etiquetas. Use <strong>Selecionar</strong> para marcar vários documentos e <strong>Mover → pasta</strong> em lote (útil após importações, ex.: acervo legislativo legado).',
+      '',
+      '<strong>Mobile</strong>',
+      'Menu de pastas pelo ícone de pasta; lista em cards com as mesmas ações.',
       '',
       '<strong>Editor</strong>',
       'Rich text, variáveis dinâmicas, imagens e tabelas. Status: rascunho, pendente, assinado, enviado.',
@@ -182,7 +188,7 @@ const artigos: Artigo[] = [
     icone: MapPin,
     conteudo: [
       '<strong>Mapa</strong>',
-      'Pins de cidadãos georreferenciados e zonas de calor por macrotema ou bairro (OpenStreetMap / Leaflet).',
+      'Pins de cidadãos georreferenciados e zonas de calor por macrotema ou bairro (OpenStreetMap / Leaflet). Painel de camadas acima do mapa (z-index) — no celular, abre na parte inferior da tela.',
       '',
       '<strong>Filtros</strong>',
       'Refine macrotemas e bairros para análise de concentração de demandas.',
@@ -259,8 +265,17 @@ const corSecao: Record<string, string> = {
 </script>
 
 <template>
-  <div class="flex gap-6 h-[calc(100vh-120px)]">
-    <aside class="w-72 flex-shrink-0">
+  <div class="flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-[calc(100vh-120px)]">
+    <div class="lg:hidden card p-3">
+      <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Tópico</label>
+      <select v-model="secaoAtiva" class="mt-1 w-full input text-sm">
+        <option v-for="artigo in artigosFiltrados" :key="artigo.id" :value="artigo.id">
+          {{ artigo.titulo }}
+        </option>
+      </select>
+    </div>
+
+    <aside class="hidden lg:block w-72 flex-shrink-0">
       <div class="card sticky top-6 max-h-[calc(100vh-150px)] overflow-y-auto">
         <div class="mb-4">
           <h2 class="text-lg font-bold text-gray-900 dark:text-slate-100 mb-2">Manual do usuário</h2>

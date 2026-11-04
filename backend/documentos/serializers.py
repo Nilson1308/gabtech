@@ -161,6 +161,33 @@ class VersaoDocumentoSerializer(RastreabilidadeModelSerializer):
         rastreabilidade_habilitada = False
 
 
+class DocumentoListSerializer(RastreabilidadeModelSerializer):
+    """Listagem — sem conteúdo HTML nem versões (payload leve)."""
+
+    tipo_documento = TipoDocumentoSerializer(read_only=True)
+    pasta = PastaDocumentoSerializer(read_only=True)
+    autor = UsuarioResumoSerializer(read_only=True)
+    etiquetas = EtiquetaDocumentoSerializer(many=True, read_only=True)
+    finalizado_at = serializers.DateTimeField(source='finalizado_em', read_only=True, allow_null=True)
+
+    class Meta:
+        model = Documento
+        fields = (
+            'id',
+            'titulo',
+            'tipo_documento',
+            'pasta',
+            'autor',
+            'status',
+            'versao_atual',
+            'etiquetas',
+            'created_at',
+            'updated_at',
+            'finalizado_at',
+        )
+        read_only_fields = fields
+
+
 class DocumentoSerializer(RastreabilidadeModelSerializer):
     tipo_documento = TipoDocumentoSerializer(read_only=True)
     pasta = PastaDocumentoSerializer(read_only=True)
@@ -234,10 +261,18 @@ class DocumentoSerializer(RastreabilidadeModelSerializer):
     def validate(self, attrs):
         instance = self.instance
         if instance and instance.status == Documento.Status.FINALIZADO:
-            bloqueados = {'conteudo', 'titulo', 'tipo_documento', 'pasta', 'etiquetas'}
+            # Finalizado: permite reorganizar pasta; bloqueia alteração de conteúdo/metadados.
+            bloqueados = {
+                'conteudo',
+                'titulo',
+                'tipo_documento',
+                'etiquetas',
+                'status',
+                'assinantes',
+            }
             if bloqueados.intersection(attrs.keys()):
                 raise serializers.ValidationError(
-                    'Documento finalizado não pode ser editado.',
+                    'Documento finalizado não pode ter conteúdo ou metadados alterados.',
                 )
         return attrs
 

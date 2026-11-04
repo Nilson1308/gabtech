@@ -260,7 +260,7 @@ export const useAgendaStore = defineStore('agenda', () => {
     espacos.value = list.map(mapEspacoFromApi)
   }
 
-  async function fetchEventos(params?: { dataDe?: string; dataAte?: string }) {
+  async function loadEventosFromApi(params?: { dataDe?: string; dataAte?: string }) {
     const search = new URLSearchParams({ page_size: '500' })
     if (params?.dataDe) search.set('data_de', params.dataDe)
     if (params?.dataAte) search.set('data_ate', params.dataAte)
@@ -280,17 +280,43 @@ export const useAgendaStore = defineStore('agenda', () => {
       if (page > 20) break
     }
 
+    return aggregated
+  }
+
+  async function fetchEventos(params?: { dataDe?: string; dataAte?: string }) {
+    const aggregated = await loadEventosFromApi(params)
     eventos.value = aggregated
     return aggregated
   }
 
-  async function initialize() {
+  /** Tipos e espaços — carregamento inicial leve (sem eventos). */
+  async function initializeCatalogo() {
     loading.value = true
     try {
-      await Promise.all([fetchTiposEvento(), fetchEspacos(), fetchEventos()])
+      await Promise.all([fetchTiposEvento(), fetchEspacos()])
     } finally {
       loading.value = false
     }
+  }
+
+  /** Carrega eventos visíveis no calendário (intervalo + margem). Mescla cache por id. */
+  async function fetchEventosParaPeriodo(dataDe: string, dataAte: string) {
+    loading.value = true
+    try {
+      const novos = await loadEventosFromApi({ dataDe, dataAte })
+      eventos.value = [
+        ...eventos.value.filter(e => e.data < dataDe || e.data > dataAte),
+        ...novos,
+      ]
+      return novos
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function initialize() {
+    await initializeCatalogo()
+    return fetchEventos()
   }
 
   function checkConflict(
@@ -516,6 +542,8 @@ export const useAgendaStore = defineStore('agenda', () => {
     espacosAtivos,
     eventosAgrupados,
     initialize,
+    initializeCatalogo,
+    fetchEventosParaPeriodo,
     fetchTiposEvento,
     fetchEspacos,
     fetchEventos,

@@ -418,6 +418,9 @@ class EventoCerimonialListSerializer(RastreabilidadeModelSerializer):
         )
 
     def get_total_convidados(self, obj: EventoCerimonial) -> int:
+        annotated = getattr(obj, 'total_convidados_ann', None)
+        if annotated is not None:
+            return int(annotated)
         return obj.convidados.count()
 
 

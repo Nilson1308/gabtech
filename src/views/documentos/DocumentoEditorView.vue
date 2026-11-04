@@ -85,7 +85,7 @@ const podeSalvar = computed(() => authStore.hasPermission('criar_docs') || authS
 
 onMounted(async () => {
   await Promise.all([
-    documentosStore.initialize(),
+    documentosStore.initializeCatalogo(),
     templatesStore.initialize(),
     documentosStore.fetchMinhaAssinaturaVisual().then(url => {
       if (url) assinaturaUrl.value = url

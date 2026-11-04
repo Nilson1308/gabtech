@@ -288,9 +288,22 @@ const handleExcluir = (tag: Tag) => {
 </script>
 
 <template>
-  <div class="flex h-[calc(100vh-120px)] gap-6">
+  <div class="flex flex-col lg:flex-row min-h-[calc(100vh-120px)] lg:h-[calc(100vh-120px)] gap-4 lg:gap-6">
+    <!-- Mobile: seletor de seção -->
+    <div class="lg:hidden card p-3">
+      <label class="text-xs font-semibold text-gray-500 dark:text-slate-400 uppercase">Seção</label>
+      <select
+        v-model="secaoAtiva"
+        class="mt-1 w-full input text-sm"
+      >
+        <option v-for="secao in secoesVisiveis" :key="secao.id" :value="secao.id">
+          {{ secao.nome }}
+        </option>
+      </select>
+    </div>
+
     <!-- Sidebar Vertical de Navegação -->
-    <aside class="w-72 flex-shrink-0">
+    <aside class="hidden lg:block w-72 flex-shrink-0">
       <div class="card p-4 sticky top-6 space-y-2">
         <div class="mb-4 pb-4 border-b border-gray-200 dark:border-slate-700">
           <h2 class="text-xl font-bold text-gray-900 dark:text-slate-100">Configurações</h2>
@@ -330,7 +343,7 @@ const handleExcluir = (tag: Tag) => {
     </aside>
 
     <!-- Área de Conteúdo Principal -->
-    <main class="flex-1 overflow-y-auto">
+    <main class="flex-1 overflow-y-auto min-w-0 pb-8">
       <div
         v-if="secoesVisiveis.length === 0"
         class="card text-center py-16 text-gray-600 dark:text-slate-400"

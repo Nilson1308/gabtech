@@ -199,11 +199,11 @@ function toggleCamada(camada: 'cidadaos' | 'demandas') {
 </script>
 
 <template>
-  <div class="relative h-[calc(100vh-8rem)]">
+  <div class="relative h-[calc(100vh-8rem)] min-h-[280px] isolate">
     <!-- Container do Mapa -->
     <div
       ref="mapaContainer"
-      class="w-full h-full rounded-lg overflow-hidden"
+      class="relative z-0 w-full h-full rounded-lg overflow-hidden"
       :class="[
         'leaflet-map',
         'dark:leaflet-dark-mode'
@@ -219,7 +219,7 @@ function toggleCamada(camada: 'cidadaos' | 'demandas') {
     >
       <div
         v-if="painelAberto"
-        class="absolute top-4 right-4 w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-gray-200 dark:border-slate-700 z-[1000]"
+        class="absolute z-[1200] max-md:inset-x-0 max-md:bottom-0 max-md:top-auto max-md:rounded-b-none max-md:max-h-[55vh] max-md:overflow-y-auto md:top-4 md:right-4 md:w-80 w-full bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-gray-200 dark:border-slate-700"
       >
         <!-- Cabeçalho do Painel -->
         <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-slate-700">
@@ -418,14 +418,14 @@ function toggleCamada(camada: 'cidadaos' | 'demandas') {
     <button
       v-if="!painelAberto"
       @click="painelAberto = true"
-      class="absolute top-4 right-4 p-3 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors z-[1000]"
+      class="absolute top-4 right-4 p-3 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors z-[1200]"
       title="Abrir Painel de Camadas"
     >
       <Layers class="w-5 h-5 text-primary-600 dark:text-primary-400" />
     </button>
 
     <!-- Legenda Flutuante Inferior -->
-    <div class="absolute bottom-4 left-4 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 p-3 z-[1000]">
+    <div class="absolute bottom-4 left-4 right-4 md:right-auto max-md:bottom-20 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700 p-3 z-[1200]">
       <p class="text-xs font-semibold text-gray-700 dark:text-slate-300 mb-2">Inteligência Territorial</p>
       <div class="flex items-center gap-4 text-xs">
         <div class="flex items-center gap-1.5">

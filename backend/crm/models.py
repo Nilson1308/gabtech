@@ -200,6 +200,7 @@ class MigracaoLegadoRef(models.Model):
         EVENTO = 'evento', 'Evento'
         ANEXO_CADASTRO = 'anexo_cadastro', 'Anexo cadastro'
         ANEXO_ATENDIMENTO = 'anexo_atendimento', 'Anexo atendimento'
+        LEGISLATIVO = 'legislativo', 'Legislativo'
 
     tipo = models.CharField('tipo', max_length=32, choices=Tipo.choices)
     legacy_id = models.PositiveIntegerField('ID legado')

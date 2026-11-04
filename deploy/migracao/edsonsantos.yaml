@@ -7,8 +7,10 @@ tenant:
 
 fonte:
   sql_path: public/db_bkp/edsonsantos/edsons79_sys.sql
-  # Pasta do servidor PHP antigo (hashes em tbCadastroDocs / tbAtendimentoDocs)
-  media_legacy_root: null  # ex.: /backup/edsons79/uploads
+  # Hashes do SQL ficam em upload/*.pdf (legado PHP). Descompacte upload.zip nesta pasta:
+  #   cd public/db_bkp/edsonsantos/arquivos && unzip -o upload.zip
+  # Resultado: .../arquivos/upload/<hash>.pdf → aponte media_legacy_root na pasta upload/
+  media_legacy_root: public/db_bkp/edsonsantos/arquivos/upload
 
 cadastro:
   tabela: tbCadastro
@@ -30,14 +32,18 @@ atendimento:
   html_descricao: sanitizar    # strip tags ou preservar conforme front
 
 usuarios_legado:
-  # legacy_id (tbUsuarios) → e-mail User no tenant (preencher antes da fase 2)
   default_responsavel_email: gab.edsonsantos@gmail.com
+  # Overrides opcionais: legacy_id → e-mail (omitir = gerar login@email_dominio)
   mapa:
-    "4": null   # Alex
-    "5": null   # Alessandra
-    "9": null   # Gabriella
-    "15": null  # Juan
-    "18": null  # Sergio
+    "1": gab.edsonsantos@gmail.com   # Admin legado → conta principal
+    "7": gab.edsonsantos@gmail.com   # Edson
+  provisionamento:
+    email_dominio: edsonsantos.gabtech.app.br
+    perfil_nome: Assessor Parlamentar
+    apenas_com_atendimentos: true
+    vincular_admin_legado_id: 1
+    stts_inativo_no_legado: [1]      # tbUsuarios.stts=1 → User inativo
+    ignorar_ids: [12]                # "Outros" — sem login útil
 
 macrotemas:
   # Nomes must match seed atendimentos (Saúde, Educação, …)
@@ -81,14 +87,24 @@ agenda:
 anexos:
   importar: true
   se_arquivo_ausente: registrar_log  # não abortar lote
-  subpastas_busca: [uploads, files, media]
+  subpastas_busca: [upload, uploads, files, media]
   mapa_tipo_cadastro:
     Curriculo: curriculo
     Documento: documento_pessoal
 
 legislativo:
-  modo: fase_5                       # skip | metadados_csv | documentos_gabtech
-  tabela: tbLegislativo
+  modo: documentos_gabtech           # skip | metadados_csv | documentos_gabtech | fase_5 (= documentos)
+  pasta_nome: Legislativo (legado)
+  tipo_documento_slug_padrao: generico
+  copiar_arquivos_locais: true
+  media_subpath: documentos_legado
+  csv_saida: deploy/migracao/edsonsantos-legislativo.csv
+  mapa_natureza_tipo:
+    Projeto de Lei Ordinária: projeto_lei
+    Projeto de Decreto Legislativo: projeto_lei
+    Requerimento: requerimento
+    Indicação: indicacao
+    Ofício: oficio
 
 execucao:
   batch_size_cadastro: 500

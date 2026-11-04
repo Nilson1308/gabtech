@@ -3,6 +3,7 @@ from django.utils import timezone
 from config.viewsets import GabineteModelViewSet, GabineteReadOnlyModelViewSet
 from rest_framework import status
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -17,7 +18,9 @@ from .models import (
     TipoDocumento,
     VersaoDocumento,
 )
+from .list_service import build_documentos_resumo
 from .serializers import (
+    DocumentoListSerializer,
     DocumentoSerializer,
     EtiquetaDocumentoSerializer,
     PastaDocumentoSerializer,
@@ -26,6 +29,12 @@ from .serializers import (
     TipoDocumentoWriteSerializer,
     VersaoDocumentoSerializer,
 )
+
+
+class DocumentoPagination(PageNumberPagination):
+    page_size = 30
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 class TipoDocumentoViewSet(GabineteModelViewSet):
@@ -168,7 +177,7 @@ class PastaDocumentoViewSet(GabineteModelViewSet):
 class DocumentoViewSet(GabineteModelViewSet):
     serializer_class = DocumentoSerializer
     permission_classes = (IsAuthenticated, ActionRBACPermission)
-    pagination_class = None
+    pagination_class = DocumentoPagination
 
     rbac_action_map = {
         'list': 'ler_docs',
@@ -178,7 +187,13 @@ class DocumentoViewSet(GabineteModelViewSet):
         'partial_update': 'editar_docs',
         'destroy': 'excluir_docs',
         'restaurar_versao': 'editar_docs',
+        'resumo': 'ler_docs',
     }
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return DocumentoListSerializer
+        return DocumentoSerializer
 
     def get_rbac_codename(self):
         codename = self.rbac_action_map.get(self.action)
@@ -189,14 +204,16 @@ class DocumentoViewSet(GabineteModelViewSet):
         return codename
 
     def get_queryset(self):
-        qs = (
-            Documento.objects.select_related(
-                'tipo_documento',
-                'pasta',
-                'autor',
-                'autor__perfil',
-            )
-            .prefetch_related(
+        qs = Documento.objects.select_related(
+            'tipo_documento',
+            'pasta',
+            'autor',
+            'autor__perfil',
+        )
+        if self.action == 'list':
+            qs = qs.prefetch_related('etiquetas')
+        else:
+            qs = qs.prefetch_related(
                 'assinantes',
                 'assinantes__perfil',
                 'etiquetas',
@@ -204,12 +221,16 @@ class DocumentoViewSet(GabineteModelViewSet):
                 'versoes__autor',
                 'versoes__autor__perfil',
             )
-        )
+
+        qs = qs.order_by('-updated_at')
+
         status_param = self.request.query_params.get('status')
         pasta_id = self.request.query_params.get('pasta_id')
         sem_pasta = self.request.query_params.get('sem_pasta')
         etiqueta_id = self.request.query_params.get('etiqueta_id')
         busca = self.request.query_params.get('q')
+        updated_de = self.request.query_params.get('updated_de')
+        updated_ate = self.request.query_params.get('updated_ate')
 
         if status_param:
             qs = qs.filter(status=status_param)
@@ -219,11 +240,23 @@ class DocumentoViewSet(GabineteModelViewSet):
             qs = qs.filter(pasta__isnull=True)
         if etiqueta_id:
             qs = qs.filter(etiquetas__id=etiqueta_id).distinct()
+        if updated_de:
+            qs = qs.filter(updated_at__date__gte=updated_de)
+        if updated_ate:
+            qs = qs.filter(updated_at__date__lte=updated_ate)
         if busca:
             qs = qs.filter(
-                Q(titulo__icontains=busca) | Q(etiquetas__nome__icontains=busca),
+                Q(titulo__icontains=busca)
+                | Q(etiquetas__nome__icontains=busca)
+                | Q(autor__first_name__icontains=busca)
+                | Q(autor__last_name__icontains=busca)
+                | Q(autor__email__icontains=busca),
             ).distinct()
         return qs
+
+    @action(detail=False, methods=['get'], url_path='resumo')
+    def resumo(self, request):
+        return Response(build_documentos_resumo())
 
     @action(detail=True, methods=['post'], url_path='restaurar-versao')
     def restaurar_versao(self, request, pk=None):

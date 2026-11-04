@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDocumentosStore } from '@/stores/documentos'
 import { useAuthStore } from '@/stores/auth'
@@ -46,40 +46,41 @@ const mostrarSeletorTipo = ref(false)
 const mostrarModalMoverPasta = ref(false)
 const documentoParaMover = ref<string | null>(null)
 const pastaDestino = ref<string | undefined>(undefined)
+const modoSelecao = ref(false)
+const selecionados = ref<Set<string>>(new Set())
+const sidebarAberta = ref(false)
+const movendoEmLote = ref(false)
 
 onMounted(() => {
   documentosStore.initialize()
 })
 
-// Computed
-const documentosExibidos = computed(() => {
-  let docs = documentosStore.documentosFiltrados
+let debounceBusca: ReturnType<typeof setTimeout> | null = null
 
-  // Filtro especial "Sem Pasta"
-  if (documentosStore.pastaAtiva === 'sem-pasta') {
-    docs = documentosStore.documentos.filter(d => !d.pastaId)
-  }
+function sincronizarFiltrosApi() {
+  documentosStore.setListFiltros({
+    q: busca.value.trim() || undefined,
+    updatedDe: dataInicio.value || undefined,
+    updatedAte: dataFim.value || undefined,
+  })
+}
 
-  // Filtrar por busca
-  if (busca.value.trim()) {
-    const query = busca.value.toLowerCase()
-    docs = docs.filter(d =>
-      d.titulo.toLowerCase().includes(query) ||
-      d.autor.nome.toLowerCase().includes(query) ||
-      d.etiquetas.some(e => e.nome.toLowerCase().includes(query)),
-    )
-  }
-
-  // Filtrar por período
-  if (dataInicio.value) {
-    docs = docs.filter(d => new Date(d.updatedAt) >= new Date(dataInicio.value))
-  }
-  if (dataFim.value) {
-    docs = docs.filter(d => new Date(d.updatedAt) <= new Date(dataFim.value + 'T23:59:59'))
-  }
-
-  return docs
+watch([busca, dataInicio, dataFim], () => {
+  if (debounceBusca) clearTimeout(debounceBusca)
+  debounceBusca = setTimeout(sincronizarFiltrosApi, 350)
 })
+
+const documentosExibidos = computed(() => documentosStore.documentosFiltrados)
+
+const totalPaginas = computed(() =>
+  Math.max(1, Math.ceil(documentosStore.listTotal / documentosStore.listPageSize)),
+)
+
+async function irParaPagina(page: number) {
+  if (page < 1 || page > totalPaginas.value) return
+  await documentosStore.fetchDocumentosPagina(page)
+  selecionados.value = new Set()
+}
 
 const breadcrumbs = computed(() => {
   const items: Array<{ nome: string; id: string | null }> = [{ nome: 'Documentos', id: null }]
@@ -108,47 +109,88 @@ const breadcrumbs = computed(() => {
   return items
 })
 
-// Métodos
-function contarDocumentosNaPasta(pastaId: string): number {
-  return documentosStore.documentos.filter(d => d.pastaId === pastaId).length
-}
-
 function selecionarPasta(pastaId: string | null) {
   documentosStore.setPastaAtiva(pastaId)
   documentosStore.setFiltroStatus(null)
   documentosStore.setEtiquetaAtiva(null)
+  sidebarAberta.value = false
+  documentosStore.fetchDocumentosPagina(1)
 }
 
 function selecionarEtiqueta(etiquetaId: string | null) {
   documentosStore.setEtiquetaAtiva(etiquetaId)
   documentosStore.setPastaAtiva(null)
   documentosStore.setFiltroStatus(null)
+  sidebarAberta.value = false
+  documentosStore.fetchDocumentosPagina(1)
 }
 
 function selecionarStatus(status: StatusDocumento | null) {
   documentosStore.setFiltroStatus(status)
   documentosStore.setPastaAtiva(null)
   documentosStore.setEtiquetaAtiva(null)
+  sidebarAberta.value = false
+  documentosStore.fetchDocumentosPagina(1)
 }
 
-function abrirModalMoverPasta(documentoId: string) {
-  documentoParaMover.value = documentoId
-  const doc = documentosStore.getDocumentoById(documentoId)
-  pastaDestino.value = doc?.pastaId
+const idsSelecionados = computed(() => [...selecionados.value])
+const todosVisiveisSelecionados = computed(() => {
+  const docs = documentosExibidos.value
+  return docs.length > 0 && docs.every(d => selecionados.value.has(d.id))
+})
+
+function toggleModoSelecao() {
+  modoSelecao.value = !modoSelecao.value
+  if (!modoSelecao.value) selecionados.value = new Set()
+}
+
+function toggleSelecionado(id: string) {
+  const next = new Set(selecionados.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selecionados.value = next
+}
+
+function toggleSelecionarTodos() {
+  if (todosVisiveisSelecionados.value) {
+    selecionados.value = new Set()
+    return
+  }
+  selecionados.value = new Set(documentosExibidos.value.map(d => d.id))
+}
+
+function abrirModalMoverPasta(documentoId?: string) {
+  if (documentoId) {
+    documentoParaMover.value = documentoId
+    const doc = documentosStore.getDocumentoById(documentoId)
+    pastaDestino.value = doc?.pastaId
+  } else {
+    documentoParaMover.value = null
+    pastaDestino.value = undefined
+  }
   mostrarModalMoverPasta.value = true
   menuAbertoId.value = null
 }
 
 async function confirmarMoverPasta() {
-  if (!documentoParaMover.value) return
-  
   try {
-    await documentosStore.moverParaPasta(documentoParaMover.value, pastaDestino.value || null)
+    movendoEmLote.value = true
+    if (documentoParaMover.value) {
+      await documentosStore.moverParaPasta(documentoParaMover.value, pastaDestino.value || null)
+      await documentosStore.fetchDocumentosPagina(documentosStore.listPage)
+    } else if (idsSelecionados.value.length) {
+      await documentosStore.moverVariosParaPasta(idsSelecionados.value, pastaDestino.value || null)
+      selecionados.value = new Set()
+      modoSelecao.value = false
+    }
     mostrarModalMoverPasta.value = false
     documentoParaMover.value = null
     pastaDestino.value = undefined
   } catch (error) {
-    console.error('Erro ao mover documento:', error)
+    const msg = error instanceof Error ? error.message : 'Não foi possível mover o(s) documento(s).'
+    showInfo(msg)
+  } finally {
+    movendoEmLote.value = false
   }
 }
 
@@ -237,12 +279,21 @@ function formatarData(data: string) {
 </script>
 
 <template>
-  <div class="flex gap-4 h-[calc(100vh-8rem)]">
+  <div class="flex flex-col lg:flex-row gap-4 min-h-[calc(100vh-8rem)] lg:h-[calc(100vh-8rem)]">
+    <div
+      v-if="sidebarAberta"
+      class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+      @click="sidebarAberta = false"
+    />
+
     <!-- Sidebar Esquerda - Navegação -->
-    <aside class="w-64 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 overflow-y-auto flex-shrink-0">
+    <aside
+      class="fixed lg:relative inset-y-0 left-0 z-50 lg:z-auto w-[min(100%,16rem)] lg:w-64 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 overflow-y-auto flex-shrink-0 shadow-xl lg:shadow-none"
+      :class="sidebarAberta ? 'flex' : 'hidden lg:flex flex-col'"
+    >
       <!-- Todos os Documentos -->
       <button
-        @click="selecionarPasta(null); documentosStore.setFiltroStatus(null); documentosStore.setEtiquetaAtiva(null)"
+        @click="selecionarPasta(null)"
         :class="[
           !documentosStore.pastaAtiva && !documentosStore.filtroStatus && !documentosStore.etiquetaAtiva
             ? 'bg-primary-50 text-primary-700 dark:bg-primary-900/30 dark:text-primary-400 font-medium'
@@ -252,7 +303,7 @@ function formatarData(data: string) {
       >
         <Home class="w-4 h-4 flex-shrink-0" />
         <span>Todos os Documentos</span>
-        <span class="ml-auto text-xs">{{ documentosStore.documentos.length }}</span>
+        <span class="ml-auto text-xs">{{ documentosStore.documentosTotalGeral }}</span>
       </button>
 
       <!-- Divider -->
@@ -329,7 +380,7 @@ function formatarData(data: string) {
           >
             <Folder class="w-4 h-4 flex-shrink-0 text-gray-400" />
             <span>Sem Pasta</span>
-            <span class="ml-auto text-xs">{{ documentosStore.documentos.filter(d => !d.pastaId).length }}</span>
+            <span class="ml-auto text-xs">{{ documentosStore.contarSemPasta() }}</span>
           </button>
 
           <!-- Pastas Criadas -->
@@ -350,7 +401,7 @@ function formatarData(data: string) {
               :style="{ color: pasta.cor }"
             />
             <span class="truncate">{{ pasta.nome }}</span>
-            <span class="ml-auto text-xs flex-shrink-0">{{ contarDocumentosNaPasta(pasta.id) }}</span>
+            <span class="ml-auto text-xs flex-shrink-0">{{ documentosStore.contarDocumentosNaPasta(pasta.id) }}</span>
           </button>
         </div>
       </div>
@@ -389,9 +440,19 @@ function formatarData(data: string) {
     </aside>
 
     <!-- Área Principal -->
-    <main class="flex-1 flex flex-col min-w-0">
+    <main class="flex-1 flex flex-col min-w-0 min-h-0">
       <!-- Header -->
-      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 mb-4">
+      <div class="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-3 sm:p-4 mb-4">
+        <div class="flex items-center gap-2 mb-3 lg:hidden">
+          <button
+            type="button"
+            class="p-2 rounded-lg border border-gray-200 dark:border-gray-600"
+            @click="sidebarAberta = true"
+          >
+            <Folder class="w-5 h-5" />
+          </button>
+          <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Pastas e filtros</span>
+        </div>
         <!-- Breadcrumbs -->
         <div class="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 mb-4">
           <template v-for="(item, index) in breadcrumbs" :key="`breadcrumb-${index}`">
@@ -413,9 +474,9 @@ function formatarData(data: string) {
         <!-- Barra de Busca e Ações -->
         <div class="flex flex-col gap-3">
           <!-- Linha 1: Busca e Botão -->
-          <div class="flex items-center gap-3">
+          <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             <!-- Busca -->
-            <div class="flex-1 relative">
+            <div class="flex-1 relative min-w-0">
               <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 v-model="busca"
@@ -450,8 +511,8 @@ function formatarData(data: string) {
           </div>
 
           <!-- Linha 2: Filtros de Período -->
-          <div class="flex items-center gap-3">
-            <div class="flex items-center gap-2">
+          <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div class="flex flex-wrap items-center gap-2">
               <label class="text-sm text-gray-600 dark:text-gray-400 font-medium">
                 Período:
               </label>
@@ -475,19 +536,80 @@ function formatarData(data: string) {
               </button>
             </div>
             
-            <div class="ml-auto text-sm text-gray-600 dark:text-gray-400">
-              {{ documentosExibidos.length }} documento(s)
+            <div class="sm:ml-auto flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+              <span>
+                {{ documentosStore.listTotal }} documento(s)
+                <span v-if="documentosStore.listLoading" class="text-primary-600"> · carregando…</span>
+              </span>
+              <button
+                v-if="authStore.hasPermission('editar_docs')"
+                type="button"
+                class="px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors"
+                :class="modoSelecao ? 'border-primary-500 text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-300 dark:border-gray-600'"
+                @click="toggleModoSelecao"
+              >
+                {{ modoSelecao ? 'Cancelar seleção' : 'Selecionar' }}
+              </button>
+              <button
+                v-if="modoSelecao && idsSelecionados.length"
+                type="button"
+                class="px-3 py-1.5 rounded-lg bg-primary-600 text-white text-xs font-medium"
+                @click="abrirModalMoverPasta()"
+              >
+                Mover {{ idsSelecionados.length }} → pasta
+              </button>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Tabela de Documentos -->
-      <div class="flex-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
-        <div class="overflow-x-auto h-full">
+      <!-- Barra seleção em massa (mobile) -->
+      <div
+        v-if="modoSelecao && idsSelecionados.length"
+        class="lg:hidden sticky bottom-2 z-30 mx-1 p-3 rounded-lg bg-primary-600 text-white flex items-center justify-between shadow-lg"
+      >
+        <span class="text-sm font-medium">{{ idsSelecionados.length }} selecionado(s)</span>
+        <button type="button" class="text-sm underline" @click="abrirModalMoverPasta()">Mover</button>
+      </div>
+
+      <!-- Paginação -->
+      <div
+        v-if="documentosStore.listTotal > documentosStore.listPageSize"
+        class="flex flex-wrap items-center justify-center gap-3 py-2 text-sm text-gray-600 dark:text-gray-400"
+      >
+        <button
+          type="button"
+          class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+          :disabled="documentosStore.listPage <= 1 || documentosStore.listLoading"
+          @click="irParaPagina(documentosStore.listPage - 1)"
+        >
+          Anterior
+        </button>
+        <span>Página {{ documentosStore.listPage }} de {{ totalPaginas }}</span>
+        <button
+          type="button"
+          class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+          :disabled="documentosStore.listPage >= totalPaginas || documentosStore.listLoading"
+          @click="irParaPagina(documentosStore.listPage + 1)"
+        >
+          Próxima
+        </button>
+      </div>
+
+      <!-- Tabela de Documentos (desktop) -->
+      <div class="hidden md:flex flex-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden flex-col min-h-0">
+        <div class="overflow-x-auto flex-1 min-h-0">
           <table class="w-full">
             <thead class="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
               <tr>
+                <th v-if="modoSelecao" class="px-4 py-3 w-10">
+                  <input
+                    type="checkbox"
+                    :checked="todosVisiveisSelecionados"
+                    class="rounded border-gray-300 dark:border-gray-600"
+                    @change="toggleSelecionarTodos"
+                  />
+                </th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                   Documento
                 </th>
@@ -511,6 +633,14 @@ function formatarData(data: string) {
                 :key="doc.id"
                 class="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
               >
+                <td v-if="modoSelecao" class="px-4 py-4">
+                  <input
+                    type="checkbox"
+                    :checked="selecionados.has(doc.id)"
+                    class="rounded border-gray-300 dark:border-gray-600"
+                    @change="toggleSelecionado(doc.id)"
+                  />
+                </td>
                 <!-- Documento -->
                 <td class="px-6 py-4">
                   <div class="flex items-start gap-3">
@@ -654,7 +784,7 @@ function formatarData(data: string) {
 
               <!-- Estado Vazio -->
               <tr v-if="documentosExibidos.length === 0">
-                <td colspan="5" class="px-6 py-16 text-center">
+                <td :colspan="modoSelecao ? 6 : 5" class="px-6 py-16 text-center">
                   <FileText class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
                   <p class="text-gray-500 dark:text-gray-400">
                     {{ busca ? 'Nenhum documento encontrado' : 'Nenhum documento nesta pasta' }}
@@ -664,6 +794,50 @@ function formatarData(data: string) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Lista em cards (mobile) -->
+      <div class="md:hidden flex-1 space-y-3 overflow-y-auto pb-20">
+        <label
+          v-if="modoSelecao && documentosExibidos.length"
+          class="flex items-center gap-2 px-2 text-sm text-gray-600 dark:text-gray-400"
+        >
+          <input
+            type="checkbox"
+            :checked="todosVisiveisSelecionados"
+            class="rounded"
+            @change="toggleSelecionarTodos"
+          />
+          Selecionar todos visíveis
+        </label>
+        <article
+          v-for="doc in documentosExibidos"
+          :key="`m-${doc.id}`"
+          class="rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-4"
+        >
+          <div class="flex gap-3">
+            <input
+              v-if="modoSelecao"
+              type="checkbox"
+              :checked="selecionados.has(doc.id)"
+              class="mt-1 rounded"
+              @change="toggleSelecionado(doc.id)"
+            />
+            <div class="min-w-0 flex-1">
+              <button type="button" class="text-left font-medium text-gray-900 dark:text-gray-100 line-clamp-2" @click="editarDocumento(doc.id)">
+                {{ doc.titulo }}
+              </button>
+              <span :class="[getStatusBadge(doc.status).classes, 'inline-flex mt-2 px-2 py-0.5 rounded-full text-xs']">
+                {{ getStatusBadge(doc.status).label }}
+              </span>
+              <p class="text-xs text-gray-500 dark:text-gray-400 mt-2">{{ doc.autor.nome }}</p>
+            </div>
+            <button type="button" class="p-1" @click="toggleMenu(doc.id)">
+              <MoreVertical class="w-5 h-5 text-gray-400" />
+            </button>
+          </div>
+        </article>
+        <p v-if="documentosExibidos.length === 0" class="text-center text-gray-500 py-12">Nenhum documento</p>
       </div>
     </main>
 
@@ -692,7 +866,7 @@ function formatarData(data: string) {
           <!-- Header -->
           <div class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
             <h3 class="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Mover para Pasta
+              {{ documentoParaMover ? 'Mover para Pasta' : `Mover ${idsSelecionados.length} documento(s)` }}
             </h3>
             <button
               @click="cancelarMoverPasta"
@@ -732,10 +906,11 @@ function formatarData(data: string) {
             </button>
             <button
               @click="confirmarMoverPasta"
-              class="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium transition-colors"
+              :disabled="movendoEmLote"
+              class="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-60 text-white rounded-lg font-medium transition-colors"
             >
               <Check class="w-4 h-4" />
-              Mover
+              {{ movendoEmLote ? 'Movendo…' : 'Mover' }}
             </button>
           </div>
         </div>

@@ -60,7 +60,7 @@ interface DocumentoApi {
   titulo: string
   tipo_documento: TipoDocumentoApi
   pasta?: PastaDocumentoApi | null
-  conteudo: string
+  conteudo?: string
   autor: UsuarioApi
   status: StatusDocumento
   versao_atual: number
@@ -137,7 +137,7 @@ function mapDocumentoFromApi(item: DocumentoApi): Documento {
     status: item.status,
     pastaId: item.pasta ? String(item.pasta.id) : undefined,
     pasta: item.pasta ? mapPastaFromApi(item.pasta) : undefined,
-    conteudo: item.conteudo,
+    conteudo: item.conteudo ?? '',
     autorId: String(item.autor.id),
     autor: mapUsuario(item.autor),
     assinantes: (item.assinantes ?? []).map(mapUsuario),
@@ -148,6 +148,43 @@ function mapDocumentoFromApi(item: DocumentoApi): Documento {
     updatedAt: item.updated_at,
     finalizadoAt: item.finalizado_at ?? undefined,
     rastreabilidade: mapRastreabilidade(item.rastreabilidade),
+  }
+}
+
+export interface DocumentosResumo {
+  total: number
+  semPasta: number
+  porStatus: Record<StatusDocumento, number>
+  porPasta: Record<string, number>
+  porEtiqueta: Record<string, number>
+}
+
+interface DocumentosResumoApi {
+  total: number
+  sem_pasta: number
+  por_status: Record<string, number>
+  por_pasta: Record<string, number>
+  por_etiqueta: Record<string, number>
+}
+
+export type DocumentosListFiltros = {
+  q?: string
+  updatedDe?: string
+  updatedAte?: string
+}
+
+function mapResumoFromApi(data: DocumentosResumoApi): DocumentosResumo {
+  const ps = data.por_status ?? {}
+  return {
+    total: data.total ?? 0,
+    semPasta: data.sem_pasta ?? 0,
+    porStatus: {
+      rascunho: Number(ps.rascunho ?? 0),
+      aguardando_assinatura: Number(ps.aguardando_assinatura ?? 0),
+      finalizado: Number(ps.finalizado ?? 0),
+    },
+    porPasta: data.por_pasta ?? {},
+    porEtiqueta: data.por_etiqueta ?? {},
   }
 }
 
@@ -166,61 +203,33 @@ export function getDocumentosApiErrorMessage(error: unknown): string {
   return error.message
 }
 
-async function fetchAllDocumentos(): Promise<DocumentoApi[]> {
-  const data = await apiFetch<DocumentoApi[] | DrfPaginated<DocumentoApi>>(
-    '/api/documentos/documentos/',
-  )
-  if (Array.isArray(data)) {
-    return data
-  }
-  const aggregated = [...data.results]
-  let next = data.next
-  let page = 2
-  while (next && page <= 50) {
-    const response = await apiFetch<DrfPaginated<DocumentoApi>>(
-      `/api/documentos/documentos/?page=${page}&page_size=200`,
-    )
-    aggregated.push(...response.results)
-    next = response.next
-    page += 1
-  }
-  return aggregated
-}
-
 export const useDocumentosStore = defineStore('documentos', () => {
   const documentos = ref<Documento[]>([])
   const pastas = ref<PastaDocumento[]>([])
   const etiquetas = ref<EtiquetaDocumento[]>([])
   const loading = ref(false)
+  const listLoading = ref(false)
   const pastaAtiva = ref<string | null>(null)
   const etiquetaAtiva = ref<string | null>(null)
   const filtroStatus = ref<StatusDocumento | null>(null)
+  const resumo = ref<DocumentosResumo | null>(null)
+  const listTotal = ref(0)
+  const listPage = ref(1)
+  const listPageSize = ref(30)
+  const listFiltros = ref<DocumentosListFiltros>({})
 
-  const documentosFiltrados = computed(() => {
-    let docs = documentos.value
+  const documentosFiltrados = computed(() => documentos.value)
 
-    if (pastaAtiva.value && pastaAtiva.value !== 'sem-pasta') {
-      docs = docs.filter(d => d.pastaId === pastaAtiva.value)
+  const documentosPorStatus = computed(() => {
+    const r = resumo.value?.porStatus
+    return {
+      rascunho: r?.rascunho ?? 0,
+      aguardando_assinatura: r?.aguardando_assinatura ?? 0,
+      finalizado: r?.finalizado ?? 0,
     }
-
-    if (etiquetaAtiva.value) {
-      docs = docs.filter(d => d.etiquetas.some(e => e.id === etiquetaAtiva.value))
-    }
-
-    if (filtroStatus.value) {
-      docs = docs.filter(d => d.status === filtroStatus.value)
-    }
-
-    return docs.sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-    )
   })
 
-  const documentosPorStatus = computed(() => ({
-    rascunho: documentos.value.filter(d => d.status === 'rascunho').length,
-    aguardando_assinatura: documentos.value.filter(d => d.status === 'aguardando_assinatura').length,
-    finalizado: documentos.value.filter(d => d.status === 'finalizado').length,
-  }))
+  const documentosTotalGeral = computed(() => resumo.value?.total ?? 0)
 
   async function fetchPastas() {
     const data = await apiFetch<PastaDocumentoApi[]>('/api/documentos/pastas/')
@@ -234,16 +243,67 @@ export const useDocumentosStore = defineStore('documentos', () => {
     return etiquetas.value
   }
 
-  async function fetchDocumentos() {
-    const list = await fetchAllDocumentos()
-    documentos.value = list.map(mapDocumentoFromApi)
-    return documentos.value
+  function buildListQuery(page: number) {
+    const search = new URLSearchParams({
+      page: String(page),
+      page_size: String(listPageSize.value),
+    })
+    if (filtroStatus.value) search.set('status', filtroStatus.value)
+    if (pastaAtiva.value === 'sem-pasta') search.set('sem_pasta', '1')
+    else if (pastaAtiva.value) search.set('pasta_id', pastaAtiva.value)
+    if (etiquetaAtiva.value) search.set('etiqueta_id', etiquetaAtiva.value)
+    const q = listFiltros.value.q?.trim()
+    if (q) search.set('q', q)
+    if (listFiltros.value.updatedDe) search.set('updated_de', listFiltros.value.updatedDe)
+    if (listFiltros.value.updatedAte) search.set('updated_ate', listFiltros.value.updatedAte)
+    return search.toString()
+  }
+
+  async function fetchResumo() {
+    const data = await apiFetch<DocumentosResumoApi>('/api/documentos/documentos/resumo/')
+    resumo.value = mapResumoFromApi(data)
+    return resumo.value
+  }
+
+  async function fetchDocumentosPagina(page = 1) {
+    listLoading.value = true
+    try {
+      const data = await apiFetch<DrfPaginated<DocumentoApi>>(
+        `/api/documentos/documentos/?${buildListQuery(page)}`,
+      )
+      documentos.value = data.results.map(mapDocumentoFromApi)
+      listTotal.value = data.count
+      listPage.value = page
+      return documentos.value
+    } finally {
+      listLoading.value = false
+    }
+  }
+
+  async function setListFiltros(filtros: DocumentosListFiltros) {
+    listFiltros.value = { ...filtros }
+    await fetchDocumentosPagina(1)
+  }
+
+  async function recarregarListagem() {
+    await Promise.all([fetchResumo(), fetchDocumentosPagina(listPage.value)])
+  }
+
+  /** Pastas + etiquetas (sem listar documentos). */
+  async function initializeCatalogo() {
+    loading.value = true
+    try {
+      await Promise.all([fetchPastas(), fetchEtiquetas()])
+    } finally {
+      loading.value = false
+    }
   }
 
   async function initialize() {
     loading.value = true
     try {
-      await Promise.all([fetchPastas(), fetchEtiquetas(), fetchDocumentos()])
+      await Promise.all([fetchPastas(), fetchEtiquetas(), fetchResumo()])
+      await fetchDocumentosPagina(1)
     } finally {
       loading.value = false
     }
@@ -302,6 +362,7 @@ export const useDocumentosStore = defineStore('documentos', () => {
       })
       const mapped = mapDocumentoFromApi(created)
       documentos.value.unshift(mapped)
+      await fetchResumo()
       return mapped
     } catch (error) {
       throw new Error(getDocumentosApiErrorMessage(error))
@@ -375,6 +436,7 @@ export const useDocumentosStore = defineStore('documentos', () => {
         parseJson: false,
       })
       documentos.value = documentos.value.filter(d => d.id !== id)
+      await fetchResumo()
       return true
     } catch (error) {
       throw new Error(getDocumentosApiErrorMessage(error))
@@ -450,7 +512,25 @@ export const useDocumentosStore = defineStore('documentos', () => {
   }
 
   async function moverParaPasta(documentoId: string, pastaId: string | null) {
-    return updateDocumento(documentoId, { pastaId: pastaId ?? undefined })
+    const result = await updateDocumento(documentoId, { pastaId: pastaId ?? undefined })
+    await fetchResumo()
+    return result
+  }
+
+  async function moverVariosParaPasta(documentoIds: string[], pastaId: string | null) {
+    const erros: string[] = []
+    for (const id of documentoIds) {
+      try {
+        await moverParaPasta(id, pastaId)
+      } catch (error) {
+        erros.push(id)
+        console.error(error)
+      }
+    }
+    if (erros.length) {
+      throw new Error(`Falha ao mover ${erros.length} documento(s).`)
+    }
+    await recarregarListagem()
   }
 
   function setPastaAtiva(pastaId: string | null) {
@@ -466,7 +546,15 @@ export const useDocumentosStore = defineStore('documentos', () => {
   }
 
   function contarDocumentosPorEtiqueta(etiquetaId: string): number {
-    return documentos.value.filter(d => d.etiquetas.some(e => e.id === etiquetaId)).length
+    return resumo.value?.porEtiqueta[etiquetaId] ?? 0
+  }
+
+  function contarDocumentosNaPasta(pastaId: string): number {
+    return resumo.value?.porPasta[pastaId] ?? 0
+  }
+
+  function contarSemPasta(): number {
+    return resumo.value?.semPasta ?? 0
   }
 
   async function createEtiqueta(data: { nome: string; cor?: string }) {
@@ -551,15 +639,28 @@ export const useDocumentosStore = defineStore('documentos', () => {
     pastas,
     etiquetas,
     loading,
+    listLoading,
     pastaAtiva,
     etiquetaAtiva,
     filtroStatus,
+    resumo,
+    listTotal,
+    listPage,
+    listPageSize,
+    listFiltros,
     documentosFiltrados,
     documentosPorStatus,
+    documentosTotalGeral,
     initialize,
+    initializeCatalogo,
+    fetchResumo,
+    fetchDocumentosPagina,
+    setListFiltros,
+    recarregarListagem,
     fetchPastas,
     fetchEtiquetas,
-    fetchDocumentos,
+    contarDocumentosNaPasta,
+    contarSemPasta,
     fetchDocumentoById,
     getDocumentoById,
     createDocumento,
@@ -568,6 +669,7 @@ export const useDocumentosStore = defineStore('documentos', () => {
     restaurarVersao,
     deleteDocumento,
     moverParaPasta,
+    moverVariosParaPasta,
     setPastaAtiva,
     setEtiquetaAtiva,
     setFiltroStatus,

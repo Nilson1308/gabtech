@@ -2,10 +2,22 @@
 import { RouterLink } from 'vue-router'
 import { BookOpen, Code, Mail, ExternalLink, CheckCircle, Server, Shield } from 'lucide-vue-next'
 
-const versao = 'v1.1.0'
-const dataReferencia = 'Outubro de 2026'
+const versao = 'v1.2.0'
+const dataReferencia = 'Novembro de 2026'
 
 const changelog = [
+  {
+    versao: 'v1.2.0',
+    data: 'Nov 2026',
+    itens: [
+      'Dashboard e CRM com carregamento paginado/resumido para bases grandes',
+      'Migração de mandatos legados (CRM, atendimentos, agenda, anexos, acervo legislativo em Documentos)',
+      'Agenda: eventos por período visível; calendário legível no tema escuro; layout mobile',
+      'Documentos: seleção em massa para mover à pasta; listagem responsiva',
+      'Mapa territorial: painéis acima do mapa; layout adaptado ao celular',
+      'Configurações, Manual e Sobre atualizados',
+    ],
+  },
   {
     versao: 'v1.1.0',
     data: '30 Out 2026',

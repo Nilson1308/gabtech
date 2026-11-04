@@ -1,17 +1,21 @@
 import uuid
 
 from django.db import transaction
+from django.db.models import Count, Q
 from django.utils import timezone
+from agenda.models import Evento
 from config.viewsets import GabineteModelViewSet
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from usuarios.permissions import ActionRBACPermission
 
 from .credenciamento_config import normalize_credenciamento_config
+from .list_service import build_eventos_resumo
 from .models import (
     ComunicacaoDisparo,
     ConvidadoEvento,
@@ -33,6 +37,12 @@ from .serializers import (
 )
 
 
+class EventoCerimonialPagination(PageNumberPagination):
+    page_size = 30
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class EventoCerimonialViewSet(GabineteModelViewSet):
     queryset = EventoCerimonial.objects.select_related(
         'evento_agenda',
@@ -46,7 +56,7 @@ class EventoCerimonialViewSet(GabineteModelViewSet):
         'comunicacoes',
     )
     permission_classes = (IsAuthenticated, ActionRBACPermission)
-    pagination_class = None
+    pagination_class = EventoCerimonialPagination
 
     rbac_action_map = {
         'list': 'ler_eventos',
@@ -55,6 +65,7 @@ class EventoCerimonialViewSet(GabineteModelViewSet):
         'update': 'criar_eventos',
         'partial_update': 'criar_eventos',
         'destroy': 'criar_eventos',
+        'resumo': 'ler_eventos',
         'reordenar_convidados': 'gerenciar_convidados',
         'publico': None,
         'credenciamento_publico': None,
@@ -76,6 +87,37 @@ class EventoCerimonialViewSet(GabineteModelViewSet):
         if self.action == 'publico':
             return EventoPublicoSerializer
         return EventoCerimonialSerializer
+
+    def get_queryset(self):
+        if self.action == 'list':
+            qs = EventoCerimonial.objects.select_related(
+                'evento_agenda',
+                'evento_agenda__tipo',
+                'evento_agenda__espaco',
+            ).annotate(total_convidados_ann=Count('convidados', distinct=True))
+            qs = qs.order_by('-evento_agenda__data', '-evento_agenda__hora_inicio', '-id')
+
+            busca = self.request.query_params.get('q')
+            status_param = self.request.query_params.get('status_logistico')
+            if busca:
+                qs = qs.filter(
+                    Q(evento_agenda__titulo__icontains=busca)
+                    | Q(evento_agenda__espaco__nome__icontains=busca),
+                )
+            if status_param == 'confirmado':
+                qs = qs.filter(
+                    evento_agenda__status=Evento.Status.AGENDADO,
+                    status_logistico=EventoCerimonial.StatusLogistico.PLANEJAMENTO,
+                )
+            elif status_param:
+                qs = qs.filter(status_logistico=status_param)
+            return qs
+
+        return super().get_queryset()
+
+    @action(detail=False, methods=['get'], url_path='resumo')
+    def resumo(self, request):
+        return Response(build_eventos_resumo())
 
     def perform_destroy(self, instance):
         evento_agenda = instance.evento_agenda

@@ -11,11 +11,12 @@ from core.legado.import_fase1_crm import executar_fase1_crm
 from core.legado.import_fase2_atendimentos import executar_fase2_atendimentos
 from core.legado.import_fase4_anexos import executar_fase4_anexos
 from core.legado.import_fase3_agenda import executar_fase3_agenda
+from core.legado.import_fase5_legislativo import executar_fase5_legislativo
 from core.models import Gabinete
 
 
 class Command(BaseCommand):
-    help = 'Migra dados do legado edsons79 (fases 1–4: CRM, atendimentos, agenda, anexos).'
+    help = 'Migra dados do legado edsons79 (fases 1–5: CRM, atendimentos, agenda, anexos, legislativo).'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -92,8 +93,15 @@ class Command(BaseCommand):
                     dry_run=dry_run,
                     limit=options['limit'],
                 )
+            elif fase == 5:
+                resultado = executar_fase5_legislativo(
+                    config,
+                    dry_run=dry_run,
+                    limit=options['limit'],
+                    repo_root=repo_root,
+                )
             else:
-                raise CommandError(f'Fase {fase} ainda não implementada.')
+                raise CommandError(f'Fase {fase} inválida.')
 
         self.stdout.write(self.style.SUCCESS(resultado.resumo()))
         for err in resultado.erros[:20]:

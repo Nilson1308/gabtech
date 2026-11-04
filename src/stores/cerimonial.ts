@@ -187,6 +187,60 @@ interface ComunicacaoApi {
   data_hora: string
 }
 
+interface DrfPaginated<T> {
+  count: number
+  next: string | null
+  previous: string | null
+  results: T[]
+}
+
+export interface EventosResumo {
+  total: number
+  confirmados: number
+  porStatus: {
+    planejamento: number
+    executando: number
+    concluido: number
+    cancelado: number
+  }
+}
+
+interface EventosResumoApi {
+  total: number
+  confirmados: number
+  por_status: {
+    planejamento: number
+    executando: number
+    concluido: number
+    cancelado: number
+  }
+}
+
+function mapResumoFromApi(data: EventosResumoApi): EventosResumo {
+  return {
+    total: data.total,
+    confirmados: data.confirmados,
+    porStatus: {
+      planejamento: data.por_status.planejamento,
+      executando: data.por_status.executando,
+      concluido: data.por_status.concluido,
+      cancelado: data.por_status.cancelado,
+    },
+  }
+}
+
+function mapStatusFiltroToApi(status: string): string | undefined {
+  if (status === 'todos') return undefined
+  const map: Record<string, string> = {
+    planejamento: 'planejamento',
+    em_andamento: 'executando',
+    concluido: 'concluido',
+    cancelado: 'cancelado',
+    confirmado: 'confirmado',
+  }
+  return map[status]
+}
+
 function mapStatusFromApi(status: string): Evento['status'] {
   const map: Record<string, Evento['status']> = {
     planejamento: 'planejamento',
@@ -336,16 +390,63 @@ export const useCerimonialStore = defineStore('cerimonial', () => {
   }
   const itensPadrao = ref<ItemChecklistPadrao[]>([])
   const loading = ref(false)
+  const listLoading = ref(false)
   const eventoPublico = ref<Partial<Evento> | null>(null)
+  const resumo = ref<EventosResumo | null>(null)
+  const listTotal = ref(0)
+  const listPage = ref(1)
+  const listPageSize = ref(30)
+  const listFiltroStatus = ref<string>('todos')
+  const listBusca = ref('')
 
-  async function fetchEventos() {
-    loading.value = true
+  const eventosListagem = computed(() => eventos.value)
+
+  function buildListQuery(page: number) {
+    const search = new URLSearchParams({
+      page: String(page),
+      page_size: String(listPageSize.value),
+    })
+    const q = listBusca.value.trim()
+    if (q) search.set('q', q)
+    const statusApi = mapStatusFiltroToApi(listFiltroStatus.value)
+    if (statusApi) search.set('status_logistico', statusApi)
+    return search.toString()
+  }
+
+  async function fetchResumo() {
+    const data = await apiFetch<EventosResumoApi>('/api/cerimonial/eventos/resumo/')
+    resumo.value = mapResumoFromApi(data)
+    return resumo.value
+  }
+
+  async function fetchEventosPagina(page = 1) {
+    listLoading.value = true
     try {
-      const data = await apiFetch<EventoCerimonialApi[]>('/api/cerimonial/eventos/')
-      eventos.value = data.map(item => mapEventoFromApi(item, false))
+      const data = await apiFetch<DrfPaginated<EventoCerimonialApi>>(
+        `/api/cerimonial/eventos/?${buildListQuery(page)}`,
+      )
+      eventos.value = data.results.map(item => mapEventoFromApi(item, false))
+      listTotal.value = data.count
+      listPage.value = page
+      return eventos.value
     } finally {
-      loading.value = false
+      listLoading.value = false
     }
+  }
+
+  async function setListFiltros(filtros: { q?: string; status?: string }) {
+    if (filtros.q !== undefined) listBusca.value = filtros.q
+    if (filtros.status !== undefined) listFiltroStatus.value = filtros.status
+    await fetchEventosPagina(1)
+  }
+
+  async function recarregarListagem() {
+    await Promise.all([fetchResumo(), fetchEventosPagina(listPage.value)])
+  }
+
+  /** @deprecated Use fetchEventosPagina */
+  async function fetchEventos() {
+    return fetchEventosPagina(1)
   }
 
   async function fetchChecklistPadrao() {
@@ -361,7 +462,12 @@ export const useCerimonialStore = defineStore('cerimonial', () => {
   }
 
   async function initialize() {
-    await Promise.all([fetchEventos(), fetchChecklistPadrao()])
+    loading.value = true
+    try {
+      await Promise.all([fetchChecklistPadrao(), fetchResumo(), fetchEventosPagina(1)])
+    } finally {
+      loading.value = false
+    }
   }
 
   async function fetchEventoDashboard(id: string) {
@@ -824,15 +930,28 @@ export const useCerimonialStore = defineStore('cerimonial', () => {
       parseJson: false,
     })
     eventos.value = eventos.value.filter(e => e.id !== eventoId)
+    await fetchResumo()
   }
 
   return {
     eventos,
+    eventosListagem,
     itensPadrao,
     loading,
+    listLoading,
     eventoPublico,
+    resumo,
+    listTotal,
+    listPage,
+    listPageSize,
+    listFiltroStatus,
+    listBusca,
     initialize,
     fetchEventos,
+    fetchEventosPagina,
+    fetchResumo,
+    setListFiltros,
+    recarregarListagem,
     fetchChecklistPadrao,
     fetchEventoDashboard,
     atualizarCredenciamentoConfig,

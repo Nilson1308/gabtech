@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCerimonialStore } from '@/stores/cerimonial'
 import { useAlertDialog } from '@/composables/useAlertDialog'
@@ -42,25 +42,34 @@ onMounted(async () => {
   await cerimonialStore.initialize()
 })
 
-const eventosFiltrados = computed(() => {
-  let eventos = cerimonialStore.eventos
+let debounceBusca: ReturnType<typeof setTimeout> | null = null
 
-  // Filtrar por busca
-  if (busca.value.trim()) {
-    const query = busca.value.toLowerCase()
-    eventos = eventos.filter(e =>
-      e.titulo.toLowerCase().includes(query) ||
-      e.local.toLowerCase().includes(query)
-    )
-  }
+function sincronizarFiltrosApi() {
+  cerimonialStore.setListFiltros({
+    q: busca.value.trim() || undefined,
+    status: filtroStatus.value,
+  })
+}
 
-  // Filtrar por status
-  if (filtroStatus.value !== 'todos') {
-    eventos = eventos.filter(e => e.status === filtroStatus.value)
-  }
-
-  return eventos.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime())
+watch(busca, () => {
+  if (debounceBusca) clearTimeout(debounceBusca)
+  debounceBusca = setTimeout(sincronizarFiltrosApi, 350)
 })
+
+watch(filtroStatus, () => {
+  sincronizarFiltrosApi()
+})
+
+const eventosFiltrados = computed(() => cerimonialStore.eventosListagem)
+
+const totalPaginas = computed(() =>
+  Math.max(1, Math.ceil(cerimonialStore.listTotal / cerimonialStore.listPageSize)),
+)
+
+async function irParaPagina(page: number) {
+  if (page < 1 || page > totalPaginas.value) return
+  await cerimonialStore.fetchEventosPagina(page)
+}
 
 function visualizarEvento(eventoId: string) {
   router.push(`/eventos/${eventoId}`)
@@ -97,11 +106,12 @@ function getStatusColor(status: string) {
 }
 
 const estatisticas = computed(() => {
-  const total = cerimonialStore.eventos.length
-  const confirmados = cerimonialStore.eventos.filter(e => e.status === 'confirmado').length
-  const planejamento = cerimonialStore.eventos.filter(e => e.status === 'planejamento').length
-  
-  return { total, confirmados, planejamento }
+  const r = cerimonialStore.resumo
+  return {
+    total: r?.total ?? 0,
+    confirmados: r?.confirmados ?? 0,
+    planejamento: r?.porStatus.planejamento ?? 0,
+  }
 })
 
 function abrirModal() {
@@ -254,6 +264,34 @@ async function criarEvento() {
           </select>
         </div>
       </div>
+      <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">
+        {{ cerimonialStore.listTotal }} evento(s)
+        <span v-if="cerimonialStore.listLoading" class="text-primary-600"> · carregando…</span>
+      </p>
+    </div>
+
+    <!-- Paginação -->
+    <div
+      v-if="cerimonialStore.listTotal > cerimonialStore.listPageSize"
+      class="flex flex-wrap items-center justify-center gap-3 py-1 text-sm text-gray-600 dark:text-gray-400"
+    >
+      <button
+        type="button"
+        class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+        :disabled="cerimonialStore.listPage <= 1 || cerimonialStore.listLoading"
+        @click="irParaPagina(cerimonialStore.listPage - 1)"
+      >
+        Anterior
+      </button>
+      <span>Página {{ cerimonialStore.listPage }} de {{ totalPaginas }}</span>
+      <button
+        type="button"
+        class="px-3 py-1 rounded border border-gray-300 dark:border-gray-600 disabled:opacity-40"
+        :disabled="cerimonialStore.listPage >= totalPaginas || cerimonialStore.listLoading"
+        @click="irParaPagina(cerimonialStore.listPage + 1)"
+      >
+        Próxima
+      </button>
     </div>
 
     <!-- Tabela de Eventos -->
@@ -357,7 +395,11 @@ async function criarEvento() {
               <td colspan="6" class="px-6 py-16 text-center">
                 <Sparkles class="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
                 <p class="text-gray-500 dark:text-gray-400">
-                  {{ busca ? 'Nenhum evento encontrado' : 'Nenhum evento cadastrado' }}
+                  {{
+                    busca.trim() || filtroStatus !== 'todos'
+                      ? 'Nenhum evento encontrado com estes filtros'
+                      : 'Nenhum evento cadastrado'
+                  }}
                 </p>
               </td>
             </tr>
